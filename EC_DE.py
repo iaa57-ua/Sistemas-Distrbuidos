@@ -18,15 +18,42 @@ def cargar_configuracion(file_path):
 config = cargar_configuracion('config.json')
 
 # Usar parámetros de la configuración
-TAXI_ID = config["taxi_id"]
-SENSORS_PORT = config["sensors_port"]
-BROKER = config["broker"]
-TOPIC_TAXI_STATUS = config["topic_taxi_status"]
-TOPIC_CENTRAL_COMMANDS = config["topic_central_commands"]
+TAXI_ID = config["taxi"]["taxi_id"]
+SENSORS_PORT = config["taxi"]["sensors_port"]
+BROKER = config["taxi"]["broker"]
+TOPIC_TAXI_STATUS = config["taxi"]["topic_taxi_status"]
+TOPIC_CENTRAL_COMMANDS = config["taxi"]["topic_central_commands"]
+
+# Parámetros de la central
+CENTRAL_IP = config["central"]["ip"]
+CENTRAL_PORT = config["central"]["port"]
 
 # Kafka config
 producer = KafkaProducer(bootstrap_servers=BROKER)
 consumer = KafkaConsumer(TOPIC_CENTRAL_COMMANDS, bootstrap_servers=BROKER, group_id=f'taxi_{TAXI_ID}')
+
+taxi_pos = [1, 1]
+taxi_status = 'OK'
+
+def autenticar_con_central():
+    """Autentica el taxi con la central mediante sockets."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((CENTRAL_IP, CENTRAL_PORT))
+            # Enviar el ID del taxi para autenticación
+            s.sendall(f"{TAXI_ID}".encode())
+            
+            # Esperar la respuesta de la central
+            respuesta = s.recv(1024).decode()
+            if respuesta == "Autenticación exitosa":
+                print(f"Taxi {TAXI_ID} autenticado con éxito.")
+                return True
+            else:
+                print(f"Taxi {TAXI_ID} autenticación fallida: {respuesta}")
+                return False
+    except Exception as e:
+        print(f"Error de conexión con la central: {e}")
+        return False
 
 def mover_taxi_hacia(destino_x, destino_y):
     global taxi_pos, taxi_status
@@ -84,5 +111,9 @@ def escuchar_sensores():
                         print(f'Taxi {TAXI_ID} reanudado por el sensor.')
                 time.sleep(1)
 
-# Iniciar los hilos
-threading.Thread(target=escuchar_sensores).start()
+# Iniciar los hilos si la autenticación con la central es exitosa
+if autenticar_con_central():
+    threading.Thread(target=escuchar_sensores).start()
+else:
+    print("No se pudo autenticar con la central, terminando proceso.")
+
