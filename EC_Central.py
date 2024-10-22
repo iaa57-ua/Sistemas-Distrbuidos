@@ -21,7 +21,7 @@ producer = KafkaProducer(
 # Diccionario de taxis y solicitudes pendientes
 taxis = {}  # Diccionario para almacenar el estado y ubicación de los taxis
 
-def leer_base_datos(file_path='base de datos'):
+def leer_base_datos(file_path='bdd.txt'):
     """Lee el archivo de la base de datos y devuelve un diccionario con los taxis activos."""
     taxis_activos = {}
     try:
