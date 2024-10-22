@@ -18,9 +18,9 @@ def cargar_configuracion(file_path):
 config = cargar_configuracion('config.json')
 
 # Parámetros de configuración del cliente
-BROKER = config["broker"]
-TOPIC_REQUEST_TAXI = "taxi_requests"
-TOPIC_CONFIRMATION = "taxi_confirmation"
+BROKER = config["taxi"]["broker"]
+TOPIC_REQUEST_TAXI = config["cliente"]["topic_request_taxi"]
+TOPIC_CONFIRMATION = config["cliente"]["topic_confirmation"]
 CLIENT_ID = 1
 
 # Configurar el Kafka Producer para enviar mensajes
@@ -47,10 +47,16 @@ def solicitar_taxi(ubicacion_actual, destino):
 
 def esperar_confirmacion():
     # Esperar confirmación del taxi
-    for message in consumer:
-        confirmacion = json.loads(message.value.decode())
-        if confirmacion["client_id"] == CLIENT_ID:
-            print(f"Cliente {CLIENT_ID} ha recibido confirmación: {confirmacion['mensaje']}")
+    print(f"Cliente {CLIENT_ID} esperando confirmación...")
+    while True:
+        try:
+            for message in consumer:
+                confirmacion = json.loads(message.value.decode())
+                if confirmacion["client_id"] == CLIENT_ID:
+                    print(f"Cliente {CLIENT_ID} ha recibido confirmación: {confirmacion['mensaje']}")
+                    return
+        except Exception as e:
+            print(f"Error al procesar confirmación: {e}")
             break
 
 if __name__ == "__main__":
