@@ -2,26 +2,39 @@ import socket
 import json
 from kafka import KafkaProducer, KafkaConsumer
 
-# Configuraciones de Kafka
-TOPIC_TAXI_STATUS = 'taxi_status'
-TOPIC_CENTRAL_COMMANDS = 'central_commands'
-TOPIC_REQUEST_TAXI = 'taxi_requests'
-TOPIC_CONFIRMATION = 'taxi_confirmation'
+# Función para cargar parámetros
+def cargar_configuracion(file_path):
+    try:
+        with open(file_path, 'r') as config_file:
+            config = json.load(config_file)
+            return config
+    except Exception as e:
+        print(f"Error al cargar el archivo de configuración: {e}")
+        return None
+
+# Cargar la configuración desde un archivo JSON
+config = cargar_configuracion('config.json')
+
+# Parámetros de configuración de Kafka
+TOPIC_TAXI_STATUS = config["taxi"]["topic_taxi_status"]
+TOPIC_CENTRAL_COMMANDS = config["taxi"]["topic_central_commands"]
+TOPIC_REQUEST_TAXI = config["cliente"]["topic_request_taxi"]
+TOPIC_CONFIRMATION = config["cliente"]["topic_confirmation"]
 
 # Puerto y dirección del socket para autenticación
-CENTRAL_SOCKET_IP = 'localhost'
-CENTRAL_SOCKET_PORT = 9999
+CENTRAL_SOCKET_IP = config["central"]["ip"]
+CENTRAL_SOCKET_PORT = config["central"]["port"]
 
 # Crear el productor de Kafka para enviar comandos a los taxis y confirmaciones a los clientes
 producer = KafkaProducer(
-    bootstrap_servers='localhost:9092',
+    bootstrap_servers=config["taxi"]["broker"],
     value_serializer=lambda v: json.dumps(v).encode('utf-8')
 )
 
 # Diccionario de taxis y solicitudes pendientes
 taxis = {}  # Diccionario para almacenar el estado y ubicación de los taxis
 
-def leer_base_datos(file_path='base de datos'):
+def leer_base_datos(file_path='bdd.txt'):
     """Lee el archivo de la base de datos y devuelve un diccionario con los taxis activos."""
     taxis_activos = {}
     try:
@@ -72,10 +85,10 @@ def iniciar_socket(taxis_activos):
 def main():
     """Función principal que inicia el sistema de la central."""
     taxis_activos = leer_base_datos()  # Leer la base de datos para obtener los taxis activos
-    if iniciar_socket(taxis_activos): # Iniciar el socket de autenticación
-        print("Autentificación verificada")
+    if iniciar_socket(taxis_activos):  # Iniciar el socket de autenticación
+        print("Autenticación verificada")
     else:
-        print("Autentificación fallida")     
+        print("Autenticación fallida")     
 
 # Ejecutar la central
 if __name__ == '__main__':
