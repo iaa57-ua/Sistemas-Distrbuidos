@@ -18,8 +18,8 @@ def cargar_configuracion(file_path):
 config = cargar_configuracion('config.json')
 
 # Usar parámetros de la configuración
-DIGITAL_ENGINE_IP = config["central_ip"]
-DIGITAL_ENGINE_PORT = config["sensors_port"]
+DIGITAL_ENGINE_IP = config["central"]["ip"]
+DIGITAL_ENGINE_PORT = config["taxi"]["sensors_port"]
 
 class Sensor:
     def __init__(self, digital_engine_ip, digital_engine_port):
