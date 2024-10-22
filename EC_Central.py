@@ -1,12 +1,16 @@
-from kafka import KafkaProducer, KafkaConsumer
+import socket
 import json
-import time
+from kafka import KafkaProducer, KafkaConsumer
 
-# Definir los temas de Kafka
+# Configuraciones de Kafka
 TOPIC_TAXI_STATUS = 'taxi_status'
 TOPIC_CENTRAL_COMMANDS = 'central_commands'
 TOPIC_REQUEST_TAXI = 'taxi_requests'
 TOPIC_CONFIRMATION = 'taxi_confirmation'
+
+# Puerto y dirección del socket para autenticación
+CENTRAL_SOCKET_IP = 'localhost'
+CENTRAL_SOCKET_PORT = 9999
 
 # Crear el productor de Kafka para enviar comandos a los taxis y confirmaciones a los clientes
 producer = KafkaProducer(
@@ -14,87 +18,65 @@ producer = KafkaProducer(
     value_serializer=lambda v: json.dumps(v).encode('utf-8')
 )
 
-# Crear consumidores de Kafka para escuchar los estados de los taxis y las peticiones de clientes
-consumer_taxi = KafkaConsumer(
-    TOPIC_TAXI_STATUS,
-    bootstrap_servers='localhost:9092',
-    auto_offset_reset='earliest',
-    group_id='central',
-    value_deserializer=lambda v: json.loads(v.decode('utf-8'))
-)
-
-consumer_customer = KafkaConsumer(
-    TOPIC_REQUEST_TAXI,
-    bootstrap_servers='localhost:9092',
-    auto_offset_reset='earliest',
-    group_id='central',
-    value_deserializer=lambda v: json.loads(v.decode('utf-8'))
-)
-
-# Estado del sistema
+# Diccionario de taxis y solicitudes pendientes
 taxis = {}  # Diccionario para almacenar el estado y ubicación de los taxis
-pending_requests = []  # Lista para almacenar las solicitudes de clientes pendientes
 
-def escuchar_actualizaciones_taxis():
-    """Escucha los estados de los taxis y actualiza su posición."""
-    print("Esperando actualizaciones de taxis...")
-    for message in consumer_taxi:
-        taxi_data = message.value
-        taxi_id = taxi_data['taxi_id']
-        taxis[taxi_id] = taxi_data
-        print(f"Taxi {taxi_id} - Nueva posición: {taxi_data['position']} - Estado: {taxi_data['status']}")
-        # Aquí puedes manejar más lógica sobre los taxis (paradas, reanudaciones, etc.)
+def leer_base_datos(file_path='base de datos'):
+    """Lee el archivo de la base de datos y devuelve un diccionario con los taxis activos."""
+    taxis_activos = {}
+    try:
+        with open(file_path, 'r') as f:
+            for line in f:
+                taxi_id, activo = line.strip().split(',')
+                taxis_activos[int(taxi_id)] = (activo == 'True')
+    except FileNotFoundError:
+        print("El archivo de base de datos no existe.")
+    return taxis_activos
 
-def escuchar_solicitudes_clientes():
-    """Escucha las solicitudes de clientes y asigna taxis libres."""
-    print("Esperando solicitudes de clientes...")
-    for message in consumer_customer:
-        request_data = message.value
-        print(f"Nueva solicitud del cliente {request_data['client_id']} para destino: {request_data['destino']}")
-        pending_requests.append(request_data)
-        asignar_taxi(request_data)
+def autenticar_taxi(taxi_id, taxis_activos):
+    """Autentica un taxi comparando su ID contra los datos de la base de datos."""
+    if taxi_id in taxis_activos and taxis_activos[taxi_id]:
+        print(f"Taxi {taxi_id} autenticado con éxito.")
+        return True
+    else:
+        print(f"Taxi {taxi_id} rechazado. No está activo o no registrado.")
+        return False
 
-def asignar_taxi(request_data):
-    """Asignar un taxi libre a la solicitud del cliente."""
-    for taxi_id, taxi_data in taxis.items():
-        if taxi_data['status'] == 'free':  # Se asume que el taxi está libre si su estado es 'free'
-            print(f"Asignando Taxi {taxi_id} a la solicitud del cliente {request_data['client_id']}.")
-            enviar_comando_taxi(taxi_id, request_data['destino'])
-            # Envía confirmación al cliente
-            enviar_confirmacion_cliente(request_data['client_id'], f"Taxi {taxi_id} asignado.")
-            return
-    print("No hay taxis disponibles en este momento.")
-    # Si no hay taxis disponibles, enviar un mensaje de no disponibilidad
-    enviar_confirmacion_cliente(request_data['client_id'], "No hay taxis disponibles en este momento.")
+def manejar_conexion_taxi(connection, taxis_activos):
+    """Maneja la conexión con un taxi a través de sockets."""
+    try:
+        data = connection.recv(1024).decode()
+        taxi_id = int(data)
+        if autenticar_taxi(taxi_id, taxis_activos):
+            connection.send("Autenticación exitosa".encode())
+            taxis[taxi_id] = {"status": "free", "position": [0, 0]}  # Taxi se agrega al sistema como libre
+        else:
+            connection.send("Autenticación fallida".encode())
+    except Exception as e:
+        print(f"Error al manejar la conexión del taxi: {e}")
+    finally:
+        connection.close()
 
-def enviar_comando_taxi(taxi_id, destino):
-    """Enviar un comando al taxi para que recoja al cliente y lo lleve a su destino."""
-    command = {
-        'taxi_id': taxi_id,
-        'command': 'go_to',
-        'destination': destino
-    }
-    producer.send(TOPIC_CENTRAL_COMMANDS, command)
-    producer.flush()
-    print(f"Enviando taxi {taxi_id} al destino {destino}")
-
-def enviar_confirmacion_cliente(client_id, mensaje):
-    """Enviar confirmación de taxi al cliente."""
-    confirmacion = {
-        'client_id': client_id,
-        'mensaje': mensaje
-    }
-    producer.send(TOPIC_CONFIRMATION, json.dumps(confirmacion).encode())
-    producer.flush()
-    print(f"Enviada confirmación a cliente {client_id}: {mensaje}")
+def iniciar_socket(taxis_activos):
+    """Inicia el socket para recibir conexiones de taxis y autenticarlos."""
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind((CENTRAL_SOCKET_IP, CENTRAL_SOCKET_PORT))
+    server_socket.listen(5)  # Escuchar hasta 5 conexiones simultáneas
+    print(f"Central esperando taxis en {CENTRAL_SOCKET_IP}:{CENTRAL_SOCKET_PORT}...")
+    
+    while True:
+        connection, address = server_socket.accept()
+        print(f"Conexión entrante de {address}")
+        manejar_conexion_taxi(connection, taxis_activos)
 
 def main():
-    """Función principal que inicia el proceso de escucha para taxis y clientes."""
-    while True:
-        escuchar_actualizaciones_taxis()  # Escucha las actualizaciones de los taxis
-        escuchar_solicitudes_clientes()  # Escucha las solicitudes de los clientes
-        time.sleep(1)
+    """Función principal que inicia el sistema de la central."""
+    taxis_activos = leer_base_datos()  # Leer la base de datos para obtener los taxis activos
+    if iniciar_socket(taxis_activos): # Iniciar el socket de autenticación
+        print("Autentificación verificada")
+    else:
+        print("Autentificación fallida")     
 
-# Ejecutar el sistema central
+# Ejecutar la central
 if __name__ == '__main__':
     main()
