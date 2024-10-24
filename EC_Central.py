@@ -59,6 +59,30 @@ def leer_base_datos(file_path='bdd.txt'):
     return taxis_activos
 
 
+def manejar_conexion_sensor(sensor_socket):
+    """Maneja la interacción con el sensor tras la conexión inicial."""
+    try:
+        # Escuchar si el sensor está listo
+        mensaje = central_socket.recv(1024).decode()
+        if "READY" in mensaje:
+            print(f"Sensor listo: {mensaje}")
+            # Enviar comando al sensor para que notifique al taxi
+            manejar_taxi(sensor_socket)
+        else:
+            print(f"El sensor no está listo: {mensaje}")
+    except Exception as e:
+        print(f"Error en la comunicación con el sensor: {e}")
+
+def enviar_comando_taxi(socket_sensor, comando, destino):
+    """Enviar comandos al sensor, que luego los pasa al taxi."""
+    command = {
+        'command': comando,
+        'destination': destino
+    }
+    # Enviar el comando al sensor
+    socket_sensor.send(json.dumps(command).encode())
+    print(f"Comando enviado al taxi a través del sensor: {command}")
+
 def autenticar_taxi(taxi_id, taxis_activos):
     """Autentica un taxi comparando su ID contra los datos de la base de datos."""
     if taxi_id in taxis_activos and taxis_activos[taxi_id]:
@@ -108,7 +132,7 @@ def simular_sensor(taxi_id, topic_sensor):
         time.sleep(5)
 
 
-def iniciar_socket(taxis_activos):
+def iniciar_socket_sensor():
     """Inicia el socket para recibir conexiones de taxis y autenticarlos."""
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind((CENTRAL_SOCKET_IP, CENTRAL_SOCKET_PORT))
@@ -118,7 +142,7 @@ def iniciar_socket(taxis_activos):
     while True:
         connection, address = server_socket.accept()
         print(f"Conexión entrante de {address}")
-        threading.Thread(target=manejar_conexion_taxi, args=(connection, taxis_activos)).start()
+        threading.Thread(target=manejar_conexion_sensor, args=(connection,)).start()
 
 
 def manejar_solicitud_cliente(solicitud):
@@ -167,10 +191,12 @@ def procesar_solicitudes_clientes():
 
 def main():
     """Función principal que inicia el sistema de la central."""
-    taxis_activos = leer_base_datos()  # Leer la base de datos para obtener los taxis activos
+    #taxis_activos = leer_base_datos()  # Leer la base de datos para obtener los taxis activos
     
-    # Iniciar autenticación de taxis y procesamiento de solicitudes de clientes en paralelo
-    threading.Thread(target=iniciar_socket, args=(taxis_activos,)).start()
+    # Iniciar autenticación de sensores y taxis
+    threading.Thread(target=iniciar_socket_sensor).start()
+    
+    # Procesar solicitudes de clientes en paralelo
     threading.Thread(target=procesar_solicitudes_clientes).start()
 
 

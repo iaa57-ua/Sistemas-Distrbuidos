@@ -56,9 +56,48 @@ class Sensor:
                     self.message = 'KO' if self.message == 'OK' else 'OK'
                     print(f"Sensor del taxi {self.taxi_id}: Cambió el estado a {self.message}")
 
+
+
+
+
+
+    
+    def iniciar_socket_central(self):
+        """Inicia el socket que escucha la conexión de la Central."""
+        sensor_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sensor_socket.bind((SENSOR_SOCKET_IP, SENSOR_SOCKET_PORT))
+        sensor_socket.listen(1)
+        print(f"Sensor esperando conexión de la Central en {SENSOR_SOCKET_IP}:{SENSOR_SOCKET_PORT}...")
+        self.central_socket, _ = sensor_socket.accept()
+        print("Central conectada.")
+        # Notificar a la Central que el sensor está listo
+        self.central_socket.send(f"READY".encode())
+        self.escuchar_comandos_central()
+
+    def escuchar_comandos_central(self):
+        """Escuchar comandos desde la Central y pasarlos al Taxi."""
+        while self.running:
+            try:
+                data = self.central_socket.recv(1024).decode()
+                if data:
+                    comando = json.loads(data)
+                    print(f"Recibido comando de la Central: {comando}")
+                    # Pasar el comando al Taxi
+                    self.taxi_socket.send(json.dumps(comando).encode())
+                    print(f"Comando enviado al Taxi: {comando}")
+            except Exception as e:
+                print(f"Error al recibir datos de la Central: {e}")
+                break
+
+
+
+
+
     def run(self):
+        
         self.connect_to_digital_engine()
         self.send_ready_message()  # Notificar que el sensor está listo
+        self.iniciar_socket_central()
         threading.Thread(target=self.send_sensor_data).start()
         self.listen_for_key_press()  # No necesita ser en un hilo separado
 
