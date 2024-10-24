@@ -68,19 +68,16 @@ def autenticar_taxi(taxi_id, taxis_activos):
         print(f"Taxi {taxi_id} rechazado. No está activo o no registrado.")
         return False
 
-
 def manejar_conexion_taxi(connection, taxis_activos):
     """Maneja la conexión con un taxi a través de sockets."""
-    global taxi_id_counter
     try:
-        data = connection.recv(1024).decode()
-        taxi_id_counter += 1
-        taxi_id = taxi_id_counter
+        # Leer el ID del taxi desde la conexión
+        taxi_id = int(connection.recv(1024).decode())
 
         if autenticar_taxi(taxi_id, taxis_activos):
             connection.send("Autenticación exitosa".encode())
 
-            # Crear tópicos únicos para cada taxi
+            # Crear tópicos únicos para cada taxi usando el taxi_id recibido
             topic_sensor = f"taxi_sensor_{taxi_id}"
             topic_commands = f"taxi_command_{taxi_id}"
 
@@ -93,7 +90,6 @@ def manejar_conexion_taxi(connection, taxis_activos):
 
             # Iniciar el hilo para manejar los sensores del taxi
             threading.Thread(target=simular_sensor, args=(taxi_id, topic_sensor)).start()
-
         else:
             connection.send("Autenticación fallida".encode())
     except Exception as e:

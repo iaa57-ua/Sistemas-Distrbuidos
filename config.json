@@ -5,7 +5,7 @@
     },
     "taxi": {
         "taxi_id": 1,
-        "sensors_port": 12346,
+        "sensors_port": 12001,
         "broker": "localhost:9092",
         "topic_taxi_status": "taxi_status_1",
         "topic_central_commands": "central_commands_1"

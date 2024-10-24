@@ -1,8 +1,8 @@
 import socket
 import threading
 import time
-from kafka import KafkaProducer, KafkaConsumer
 import json
+from kafka import KafkaProducer, KafkaConsumer
 
 # Función para cargar parámetros
 def cargar_configuracion(file_path):
@@ -17,36 +17,68 @@ def cargar_configuracion(file_path):
 # Cargar la configuración desde un archivo JSON
 config = cargar_configuracion('config.json')
 
-# Usar parámetros de la configuración
+# Parámetros de taxi y central
 TAXI_ID = config["taxi"]["taxi_id"]
-SENSORS_PORT = config["taxi"]["sensors_port"]
-BROKER = config["taxi"]["broker"]
-TOPIC_TAXI_STATUS = f'taxi_status_{TAXI_ID}'  # Tópico dinámico según el ID del taxi
-TOPIC_CENTRAL_COMMANDS = f'central_commands_{TAXI_ID}'  # Tópico dinámico según el ID del taxi
-
-# Parámetros de la central
+SENSORS_PORT = config["taxi"]["sensors_port"]  
 CENTRAL_IP = config["central"]["ip"]
 CENTRAL_PORT = config["central"]["port"]
 
 # Kafka config
+BROKER = config["taxi"]["broker"]
+TOPIC_TAXI_STATUS = f'taxi_status_{TAXI_ID}'  # Tópico dinámico según el ID del taxi
+TOPIC_CENTRAL_COMMANDS = f'central_commands_{TAXI_ID}'  # Tópico dinámico según el ID del taxi
+
 producer = KafkaProducer(bootstrap_servers=BROKER)
 consumer = KafkaConsumer(TOPIC_CENTRAL_COMMANDS, bootstrap_servers=BROKER, group_id=f'taxi_{TAXI_ID}')
 
 taxi_pos = [1, 1]  # Posición inicial
 taxi_status = 'OK'  # Estado inicial del taxi
 
+def esperar_sensor():
+    """Función que espera la confirmación de que el sensor está conectado."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sensor_socket:
+        sensor_socket.bind(('0.0.0.0', SENSORS_PORT))  # Puerto del sensor
+        sensor_socket.listen(1)
+        print(f"Esperando la conexión del sensor en el puerto {SENSORS_PORT}...")
+        conn, addr = sensor_socket.accept()
+        with conn:
+            ready_message = conn.recv(1024).decode()
+            if "READY" in ready_message:
+                print(f"Sensor del taxi {TAXI_ID} conectado.")
+                return True
+            else:
+                print(f"Error: Sensor del taxi {TAXI_ID} no se pudo conectar.")
+                return False
+
+
+def conectar_sensor():
+    """Intenta conectarse al sensor antes de conectarse a la central."""
+    try:
+        sensor_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sensor_socket.connect(('127.0.0.1', SENSORS_PORT))  # Conectar al puerto del sensor
+        print(f"Taxi {TAXI_ID}: Conectado al sensor en el puerto {SENSORS_PORT}")
+        return True
+    except Exception as e:
+        print(f"Taxi {TAXI_ID}: Error al conectarse al sensor en el puerto {SENSORS_PORT}: {e}")
+        return False
+
 def autenticar_con_central():
-    """Autentica el taxi con la central mediante sockets."""
+    """Autentica el taxi con la central, solo si el sensor está conectado."""
+    if not esperar_sensor():
+        print(f"Taxi {TAXI_ID} no puede conectarse a la central sin el sensor.")
+        return False
+    
+    # Aquí continúa el código de autenticación con la central...
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((CENTRAL_IP, CENTRAL_PORT))
-            # Enviar el ID del taxi para autenticación
             s.sendall(f"{TAXI_ID}".encode())
-            
-            # Esperar la respuesta de la central
             respuesta = s.recv(1024).decode()
             if respuesta == "Autenticación exitosa":
                 print(f"Taxi {TAXI_ID} autenticado con éxito.")
+                # Enviar mensaje a Kafka
+                producer.send(TOPIC_TAXI_STATUS, f"Taxi {TAXI_ID} conectado exitosamente.".encode())
+                producer.flush()
                 return True
             else:
                 print(f"Taxi {TAXI_ID} autenticación fallida: {respuesta}")
@@ -54,6 +86,7 @@ def autenticar_con_central():
     except Exception as e:
         print(f"Error de conexión con la central: {e}")
         return False
+
 
 def mover_taxi_hacia(destino_x, destino_y):
     """Función para mover el taxi hacia la posición de destino."""
@@ -118,9 +151,9 @@ def escuchar_sensores():
                         print(f'Taxi {TAXI_ID} reanudado por el sensor.')
                 time.sleep(1)
 
-# Iniciar los hilos si la autenticación con la central es exitosa
-if autenticar_con_central():
-    threading.Thread(target=escuchar_sensores).start()
-    threading.Thread(target=mover_taxi_hacia, args=(10, 10)).start()  # Prueba de mover a una posición destino
+# Iniciar los hilos si la autenticación con el sensor es exitosa
+if conectar_sensor():  # Intentar conectar al sensor primero
+    if autenticar_con_central():  # Si el sensor está conectado, autenticar con la central
+        threading.Thread(target=escuchar_sensores).start()
 else:
-    print("No se pudo autenticar con la central, terminando proceso.")
+    print(f"Taxi {TAXI_ID}: No se pudo conectar al sensor, terminando proceso.")
