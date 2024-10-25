@@ -21,7 +21,7 @@ config = cargar_configuracion('config.json')
 BROKER = config["taxi"]["broker"]
 TOPIC_REQUEST_TAXI = config["cliente"]["topic_request_taxi"]
 TOPIC_CONFIRMATION = config["cliente"]["topic_confirmation"]
-CLIENT_ID = 1
+CLIENT_ID = config["cliente"]["client_id"]
 
 # Configurar el Kafka Producer para enviar mensajes
 producer = KafkaProducer(bootstrap_servers=BROKER)
@@ -35,14 +35,14 @@ consumer = KafkaConsumer(
 )
 
 def solicitar_taxi(ubicacion_actual, destino):
-    # Enviar solicitud de taxi con la ubicación actual y destino
+    """Envía una solicitud de taxi a la central."""
     solicitud = {
         "client_id": CLIENT_ID,
         "ubicacion_actual": ubicacion_actual,
         "destino": destino
     }
     print(f"Cliente {CLIENT_ID} solicitando taxi desde {ubicacion_actual} hacia {destino}")
-    producer.send(TOPIC_REQUEST_TAXI, json.dumps(solicitud).encode())
+    producer.send(TOPIC_REQUEST_TAXI, json.dumps(solicitud).encode('utf-8'))
     producer.flush()
 
 def esperar_confirmacion():

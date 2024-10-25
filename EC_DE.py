@@ -120,8 +120,8 @@ sensor_conn = conectar_con_sensor()
 if sensor_conn:
     if autenticar_con_central():
         threading.Thread(target=escuchar_sensores, args=(sensor_conn,)).start()
-        mover_taxi_hacia(14, 14)
-        time.sleep(5)
-        mover_taxi_hacia(8, 8)
+        #mover_taxi_hacia(14, 14)
+        #time.sleep(5)
+        #mover_taxi_hacia(8, 8)
 else:
     print(f"Taxi {TAXI_ID}: No se pudo conectar al sensor, terminando proceso.")

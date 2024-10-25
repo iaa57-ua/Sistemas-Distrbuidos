@@ -43,16 +43,36 @@ consumer = KafkaConsumer(
 taxis = {}
 
 def leer_base_datos(file_path='bdd.txt'):
-    """Lee el archivo de la base de datos y devuelve un diccionario con los taxis activos."""
-    taxis_activos = {}
+    """Lee el archivo de la base de datos y devuelve un diccionario con la información de cada taxi."""
+    taxis = {}
     try:
         with open(file_path, 'r') as f:
             for line in f:
-                taxi_id, activo = line.strip().split(',')
-                taxis_activos[int(taxi_id)] = (activo == 'True')
+                # Dividir la línea en los valores esperados
+                taxi_id, libre, estado, coord_x_origen, coord_y_origen, coord_x_destino, coord_y_destino = line.strip().split(',')
+
+                # Convertir valores a los tipos necesarios
+                taxi_id = int(taxi_id)
+                libre = libre.strip().lower() == 'si'
+                coord_x_origen = int(coord_x_origen)
+                coord_y_origen = int(coord_y_origen)
+                
+                # Si no tiene destino, asignar `None`
+                coord_x_destino = None if coord_x_destino.strip() == '-' else int(coord_x_destino)
+                coord_y_destino = None if coord_y_destino.strip() == '-' else int(coord_y_destino)
+                
+                # Guardar la información del taxi en el diccionario
+                taxis[taxi_id] = {
+                    "libre": libre,
+                    "estado": estado.strip(),
+                    "posicion_actual": (coord_x_origen, coord_y_origen),
+                    "destino": (coord_x_destino, coord_y_destino)
+                }
     except FileNotFoundError:
         print("El archivo de base de datos no existe.")
-    return taxis_activos
+    except Exception as e:
+        print(f"Error al leer la base de datos: {e}")
+    return taxis
 
 def autenticar_taxi(taxi_id, taxis_activos):
     """Autentica un taxi comparando su ID contra los datos de la base de datos."""
@@ -78,7 +98,7 @@ def manejar_conexion_taxi(connection, taxis_activos):
     finally:
         connection.close()
 
-def iniciar_socket(taxis_activos):
+def iniciar_socket_taxi(taxis_activos):
     """Inicia el socket para recibir conexiones de taxis y autenticarlos."""
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind((CENTRAL_SOCKET_IP, CENTRAL_SOCKET_PORT))
@@ -89,11 +109,30 @@ def iniciar_socket(taxis_activos):
         connection, address = server_socket.accept()
         print(f"Conexión entrante de {address}")
         threading.Thread(target=manejar_conexion_taxi, args=(connection, taxis_activos)).start()
+        escuchar_peticiones_cliente() # Con esto escuha las peticiones que le envia el cliente
+
+
+def escuchar_peticiones_cliente():
+    """Escucha continuamente las peticiones de los clientes en Kafka y procesa cada solicitud."""
+    print("Central escuchando peticiones de clientes en Kafka...")
+    
+    # Consumir mensajes de Kafka en el tópico de solicitud de taxis
+    for mensaje in consumer:
+        try:
+            solicitud = mensaje.value  # Obtener el valor del mensaje
+            print(f"Central recibió solicitud de cliente: {solicitud}")
+
+            # Llamar a la función para asignar un taxi en base a la solicitud recibida
+            
+        
+        except Exception as e:
+            print(f"Error al procesar la solicitud de cliente: {e}")
+
 
 def main():
     """Función principal que inicia el sistema de la central."""
     taxis_activos = leer_base_datos()  # Leer la base de datos para obtener los taxis activos
-    iniciar_socket(taxis_activos)
+    iniciar_socket_taxi(taxis_activos)
 
 if __name__ == '__main__':
     main()

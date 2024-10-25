@@ -1,3 +1,5 @@
-1,True
-2,True
-3,True
+1, si, rojo, 1, 1, -, -
+2, no, rojo, 5, 5, -, -
+3, no, rojo, 0, 0, -, -
+4, no, rojo, 3, 2, -, -
+5, no, rojo, 10, 10, -, -
