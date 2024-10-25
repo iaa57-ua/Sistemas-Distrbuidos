@@ -34,8 +34,8 @@ consumer = KafkaConsumer(TOPIC_CENTRAL_COMMANDS, bootstrap_servers=BROKER, group
 taxi_pos = [1, 1]  # Posición inicial
 taxi_status = 'OK'  # Estado inicial del taxi
 
-def esperar_sensor():
-    """Función que espera la confirmación de que el sensor está conectado."""
+def conectar_con_sensor():
+    """Espera y se conecta al sensor en el puerto configurado."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sensor_socket:
         sensor_socket.bind(('0.0.0.0', SENSORS_PORT))  # Puerto del sensor
         sensor_socket.listen(1)
@@ -50,32 +50,15 @@ def esperar_sensor():
                 print(f"Error: Sensor del taxi {TAXI_ID} no se pudo conectar.")
                 return False
 
-
-def conectar_sensor():
-    """Intenta conectarse al sensor antes de conectarse a la central."""
-    try:
-        sensor_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sensor_socket.connect(('127.0.0.1', SENSORS_PORT))  # Conectar al puerto del sensor
-        print(f"Taxi {TAXI_ID}: Conectado al sensor en el puerto {SENSORS_PORT}")
-        return True
-    except Exception as e:
-        print(f"Taxi {TAXI_ID}: Error al conectarse al sensor en el puerto {SENSORS_PORT}: {e}")
-        return False
-
 def autenticar_con_central():
-    """Autentica el taxi con la central, solo si el sensor está conectado."""
-    if not esperar_sensor():
-        print(f"Taxi {TAXI_ID} no puede conectarse a la central sin el sensor.")
-        return False
-    
-    # Aquí continúa el código de autenticación con la central...
+    """Autentica el taxi con la central después de conectar con el sensor."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((CENTRAL_IP, CENTRAL_PORT))
             s.sendall(f"{TAXI_ID}".encode())
             respuesta = s.recv(1024).decode()
             if respuesta == "Autenticación exitosa":
-                print(f"Taxi {TAXI_ID} autenticado con éxito.")
+                print(f"Taxi {TAXI_ID} autenticado con éxito en la central.")
                 # Enviar mensaje a Kafka
                 producer.send(TOPIC_TAXI_STATUS, f"Taxi {TAXI_ID} conectado exitosamente.".encode())
                 producer.flush()
@@ -86,7 +69,6 @@ def autenticar_con_central():
     except Exception as e:
         print(f"Error de conexión con la central: {e}")
         return False
-
 
 def mover_taxi_hacia(destino_x, destino_y):
     """Función para mover el taxi hacia la posición de destino."""
@@ -151,8 +133,8 @@ def escuchar_sensores():
                         print(f'Taxi {TAXI_ID} reanudado por el sensor.')
                 time.sleep(1)
 
-# Iniciar los hilos si la autenticación con el sensor es exitosa
-if conectar_sensor():  # Intentar conectar al sensor primero
+# Iniciar el proceso principal de conexión y autenticación
+if conectar_con_sensor():  # Intentar conectar al sensor primero
     if autenticar_con_central():  # Si el sensor está conectado, autenticar con la central
         threading.Thread(target=escuchar_sensores).start()
 else:
