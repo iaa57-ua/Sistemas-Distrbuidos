@@ -1,10 +1,11 @@
 import socket
 import json
 import threading
+import time
 from kafka import KafkaProducer, KafkaConsumer
 
-# Cargar configuración desde el archivo JSON
-def cargar_configuracion(file_path='config.json'):
+# Función para cargar parámetros
+def cargar_configuracion(file_path):
     try:
         with open(file_path, 'r') as config_file:
             config = json.load(config_file)
@@ -13,15 +14,17 @@ def cargar_configuracion(file_path='config.json'):
         print(f"Error al cargar el archivo de configuración: {e}")
         return None
 
-# Cargar configuraciones desde config.json
-config = cargar_configuracion()
+# Cargar la configuración desde un archivo JSON
+config = cargar_configuracion('config.json')
 
-# Parámetros de conexión de la central y Kafka
-CENTRAL_IP = config["central"]["ip"]
-CENTRAL_PORT = config["central"]["port"]
-BROKER = config["taxi"]["broker"]
+# Parámetros de configuración de Kafka
 TOPIC_REQUEST_TAXI = config["cliente"]["topic_request_taxi"]
 TOPIC_CONFIRMATION = config["cliente"]["topic_confirmation"]
+BROKER = config["taxi"]["broker"]
+
+# Puerto y dirección del socket para autenticación
+CENTRAL_SOCKET_IP = config["central"]["ip"]
+CENTRAL_SOCKET_PORT = config["central"]["port"]
 
 # Crear el productor de Kafka para enviar comandos a los taxis y confirmaciones a los clientes
 producer = KafkaProducer(
@@ -36,68 +39,61 @@ consumer = KafkaConsumer(
     value_deserializer=lambda v: json.loads(v.decode('utf-8'))
 )
 
-# Diccionario para almacenar el estado y las configuraciones de los taxis
+# Diccionario de taxis
 taxis = {}
 
-def iniciar_socket_sensor():
-    """Inicia el socket para recibir conexiones de sensores y autenticarlos."""
-    sensor_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sensor_socket.bind((CENTRAL_IP, CENTRAL_PORT))
-    sensor_socket.listen(5)
-    print(f"Central esperando sensores en {CENTRAL_IP}:{CENTRAL_PORT}...")
-
-    while True:
-        connection, address = sensor_socket.accept()
-        print(f"Conexión entrante del sensor desde {address}")
-        # Iniciar un hilo para manejar la conexión del sensor
-        threading.Thread(target=manejar_conexion_sensor, args=(connection,)).start()
-
-def manejar_conexion_sensor(connection):
-    """Maneja la interacción con el sensor tras la conexión inicial."""
+def leer_base_datos(file_path='bdd.txt'):
+    """Lee el archivo de la base de datos y devuelve un diccionario con los taxis activos."""
+    taxis_activos = {}
     try:
-        mensaje = connection.recv(1024).decode()
-        if "READY" in mensaje:
-            taxi_id = int(mensaje.split()[1])  # Obtener el ID del taxi desde el mensaje
-            print(f"Taxi {taxi_id} conector.")
-            taxis[taxi_id] = {"status": "ready"}
-        else:
-            print(f"Sensor no está listo: {mensaje}")
-    except Exception as e:
-        print(f"Error en la comunicación con el sensor: {e}")
+        with open(file_path, 'r') as f:
+            for line in f:
+                taxi_id, activo = line.strip().split(',')
+                taxis_activos[int(taxi_id)] = (activo == 'True')
+    except FileNotFoundError:
+        print("El archivo de base de datos no existe.")
+    return taxis_activos
 
-def procesar_solicitudes_clientes():
-    """Escucha y procesa las solicitudes de los clientes."""
-    print(f"Esperando solicitudes de clientes en el tópico {TOPIC_REQUEST_TAXI}...")
-    for mensaje in consumer:
-        solicitud = mensaje.value
-        print(f"Solicitud recibida: {solicitud}")
-        manejar_solicitud_cliente(solicitud)
-
-def manejar_solicitud_cliente(solicitud):
-    """Maneja la solicitud de un cliente para asignar un taxi."""
-    ubicacion_actual = solicitud['ubicacion_actual']
-    destino = solicitud['destino']
-    
-    taxi_asignado = None
-    for taxi_id, info in taxis.items():
-        if info['status'] == 'ready':
-            taxi_asignado = taxi_id
-            break
-    
-    if taxi_asignado:
-        print(f"Asignando taxi {taxi_asignado} a la solicitud del cliente {solicitud['client_id']}")
-        taxis[taxi_asignado]['status'] = 'occupied'
-        comando = {"action": "move", "from": ubicacion_actual, "to": destino}
-        producer.send(config["taxi"]["topic_central_commands"], comando)
-        confirmacion = {"client_id": solicitud['client_id'], "mensaje": f"Taxi {taxi_asignado} asignado."}
-        producer.send(TOPIC_CONFIRMATION, confirmacion)
+def autenticar_taxi(taxi_id, taxis_activos):
+    """Autentica un taxi comparando su ID contra los datos de la base de datos."""
+    if taxi_id in taxis_activos and taxis_activos[taxi_id]:
+        print(f"Taxi {taxi_id} autenticado con éxito.")
+        return True
     else:
-        print("No hay taxis disponibles.")
+        print(f"Taxi {taxi_id} rechazado. No está activo o no registrado.")
+        return False
+
+def manejar_conexion_taxi(connection, taxis_activos):
+    """Maneja la conexión con un taxi a través de sockets."""
+    try:
+        data = connection.recv(1024).decode().strip()
+        taxi_id = int(data)
+
+        if autenticar_taxi(taxi_id, taxis_activos):
+            connection.send("Autenticación exitosa".encode())
+        else:
+            connection.send("Autenticación fallida".encode())
+    except ValueError:
+        print(f"Error: Se esperaba un número para el ID del taxi, pero se recibió: {data}")
+    finally:
+        connection.close()
+
+def iniciar_socket(taxis_activos):
+    """Inicia el socket para recibir conexiones de taxis y autenticarlos."""
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind((CENTRAL_SOCKET_IP, CENTRAL_SOCKET_PORT))
+    server_socket.listen(5)
+    print(f"Central esperando taxis en {CENTRAL_SOCKET_IP}:{CENTRAL_SOCKET_PORT}...")
+    
+    while True:
+        connection, address = server_socket.accept()
+        print(f"Conexión entrante de {address}")
+        threading.Thread(target=manejar_conexion_taxi, args=(connection, taxis_activos)).start()
 
 def main():
-    taxis_activos = cargar_configuracion()
-    threading.Thread(target=iniciar_socket_sensor).start()
-    threading.Thread(target=procesar_solicitudes_clientes).start()
+    """Función principal que inicia el sistema de la central."""
+    taxis_activos = leer_base_datos()  # Leer la base de datos para obtener los taxis activos
+    iniciar_socket(taxis_activos)
 
 if __name__ == '__main__':
     main()

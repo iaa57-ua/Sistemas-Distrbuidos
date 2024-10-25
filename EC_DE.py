@@ -2,9 +2,9 @@ import socket
 import threading
 import time
 import json
-from kafka import KafkaProducer, KafkaConsumer
+from kafka import KafkaProducer
 
-# Función para cargar parámetros
+# Cargar la configuración desde un archivo JSON
 def cargar_configuracion(file_path):
     try:
         with open(file_path, 'r') as config_file:
@@ -14,41 +14,39 @@ def cargar_configuracion(file_path):
         print(f"Error al cargar el archivo de configuración: {e}")
         return None
 
-# Cargar la configuración desde un archivo JSON
 config = cargar_configuracion('config.json')
 
 # Parámetros de taxi y central
 TAXI_ID = config["taxi"]["taxi_id"]
-SENSORS_PORT = config["taxi"]["sensors_port"]  
+SENSORS_PORT = config["taxi"]["sensors_port"]
 CENTRAL_IP = config["central"]["ip"]
 CENTRAL_PORT = config["central"]["port"]
-
-# Kafka config
 BROKER = config["taxi"]["broker"]
-TOPIC_TAXI_STATUS = f'taxi_status_{TAXI_ID}'  # Tópico dinámico según el ID del taxi
-TOPIC_CENTRAL_COMMANDS = f'central_commands_{TAXI_ID}'  # Tópico dinámico según el ID del taxi
+TOPIC_TAXI_STATUS = f'taxi_status_{TAXI_ID}'
 
 producer = KafkaProducer(bootstrap_servers=BROKER)
-consumer = KafkaConsumer(TOPIC_CENTRAL_COMMANDS, bootstrap_servers=BROKER, group_id=f'taxi_{TAXI_ID}')
-
 taxi_pos = [1, 1]  # Posición inicial
 taxi_status = 'OK'  # Estado inicial del taxi
 
 def conectar_con_sensor():
     """Espera y se conecta al sensor en el puerto configurado."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sensor_socket:
-        sensor_socket.bind(('0.0.0.0', SENSORS_PORT))  # Puerto del sensor
+    try:
+        sensor_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sensor_socket.bind(('0.0.0.0', SENSORS_PORT))
         sensor_socket.listen(1)
         print(f"Esperando la conexión del sensor en el puerto {SENSORS_PORT}...")
         conn, addr = sensor_socket.accept()
-        with conn:
-            ready_message = conn.recv(1024).decode()
-            if "READY" in ready_message:
-                print(f"Sensor del taxi {TAXI_ID} conectado.")
-                return True
-            else:
-                print(f"Error: Sensor del taxi {TAXI_ID} no se pudo conectar.")
-                return False
+        ready_message = conn.recv(1024).decode()
+        if ready_message == str(TAXI_ID):
+            print(f"Sensor del taxi {TAXI_ID} conectado.")
+            return conn  # Devuelve la conexión establecida
+        else:
+            print(f"Error: Sensor del taxi {TAXI_ID} no se pudo conectar.")
+            conn.close()
+            return None
+    except Exception as e:
+        print(f"Error al conectar con el sensor: {e}")
+        return None
 
 def autenticar_con_central():
     """Autentica el taxi con la central después de conectar con el sensor."""
@@ -59,7 +57,6 @@ def autenticar_con_central():
             respuesta = s.recv(1024).decode()
             if respuesta == "Autenticación exitosa":
                 print(f"Taxi {TAXI_ID} autenticado con éxito en la central.")
-                # Enviar mensaje a Kafka
                 producer.send(TOPIC_TAXI_STATUS, f"Taxi {TAXI_ID} conectado exitosamente.".encode())
                 producer.flush()
                 return True
@@ -75,67 +72,56 @@ def mover_taxi_hacia(destino_x, destino_y):
     global taxi_pos, taxi_status
 
     while True:
-        if taxi_pos[0] == destino_x and taxi_pos[1] == destino_y:
+        if taxi_pos == [destino_x, destino_y]:
             print(f'Taxi {TAXI_ID} ha llegado al destino {taxi_pos}')
             break
 
-        if taxi_status == 'KO':  # Si el estado es KO, detenerse
+        if taxi_status == 'KO':
             print(f'Taxi {TAXI_ID} detenido, esperando cambio de estado a OK...')
             time.sleep(2)
             continue
 
-        # Calcular la diferencia en los ejes X e Y
-        delta_x = destino_x - taxi_pos[0]
-        if abs(delta_x) > 10:  # Ajuste por movimiento circular en X
-            delta_x = delta_x - 20 if delta_x > 0 else delta_x + 20
+        # Movimiento en X e Y, ajustado para mapa circular
+        delta_x = (destino_x - taxi_pos[0]) % 20
+        if delta_x > 10:
+            delta_x -= 20
+        delta_y = (destino_y - taxi_pos[1]) % 20
+        if delta_y > 10:
+            delta_y -= 20
 
-        delta_y = destino_y - taxi_pos[1]
-        if abs(delta_y) > 10:  # Ajuste por movimiento circular en Y
-            delta_y = delta_y - 20 if delta_y > 0 else delta_y + 20
-
-        # Mover en X
-        if delta_x != 0:
-            taxi_pos[0] += 1 if delta_x > 0 else -1
-
-        # Mover en Y
-        if delta_y != 0:
-            taxi_pos[1] += 1 if delta_y > 0 else -1
-
-        # Envolver el mapa cuando se sale de los límites
-        taxi_pos[0] = (taxi_pos[0] - 1) % 20 + 1
-        taxi_pos[1] = (taxi_pos[1] - 1) % 20 + 1
+        taxi_pos[0] = (taxi_pos[0] + (1 if delta_x > 0 else -1)) % 20 or 20
+        taxi_pos[1] = (taxi_pos[1] + (1 if delta_y > 0 else -1)) % 20 or 20
 
         print(f'Taxi {TAXI_ID} se mueve a posición {taxi_pos}')
-        # Enviar el estado del movimiento a Kafka
         producer.send(TOPIC_TAXI_STATUS, f'MOVE {taxi_pos}'.encode())
-
         time.sleep(2)
 
-def escuchar_sensores():
-    """Función para escuchar las señales de los sensores conectados al taxi."""
+def escuchar_sensores(conn):
+    """Escucha las señales de los sensores y ajusta el estado del taxi (OK/KO)."""
     global taxi_status
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sensor_socket:
-        sensor_socket.bind(('0.0.0.0', SENSORS_PORT))
-        sensor_socket.listen(1)
-        print(f'Esperando conexión de sensores en el puerto {SENSORS_PORT}...')
-        conn, addr = sensor_socket.accept()
-        with conn:
-            print(f'Conexión de sensores recibida desde {addr}')
-            while True:
+    with conn:
+        print(f'Conexión establecida con el sensor en el puerto {SENSORS_PORT}')
+        while True:
+            try:
                 sensor_data = conn.recv(1024).decode()
                 if sensor_data:
-                    print(f'Sensor: {sensor_data}')
-                    if sensor_data == 'KO':
-                        taxi_status = 'KO'
-                        print(f'Taxi {TAXI_ID} detenido por el sensor.')
-                    elif sensor_data == 'OK':
-                        taxi_status = 'OK'
-                        print(f'Taxi {TAXI_ID} reanudado por el sensor.')
-                time.sleep(1)
+                    print(f'Sensor envió: {sensor_data}')
+                    taxi_status = sensor_data
+            except (ConnectionResetError, ConnectionAbortedError):
+                print("Conexión con el sensor perdida.")
+                conn.close()
+                break
+            except Exception as e:
+                print(f"Error inesperado en la comunicación con el sensor: {e}")
+                break
 
-# Iniciar el proceso principal de conexión y autenticación
-if conectar_con_sensor():  # Intentar conectar al sensor primero
-    if autenticar_con_central():  # Si el sensor está conectado, autenticar con la central
-        threading.Thread(target=escuchar_sensores).start()
+# Proceso principal
+sensor_conn = conectar_con_sensor()
+if sensor_conn:
+    if autenticar_con_central():
+        threading.Thread(target=escuchar_sensores, args=(sensor_conn,)).start()
+        mover_taxi_hacia(14, 14)
+        time.sleep(5)
+        mover_taxi_hacia(8, 8)
 else:
     print(f"Taxi {TAXI_ID}: No se pudo conectar al sensor, terminando proceso.")
