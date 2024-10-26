@@ -19,19 +19,24 @@ SENSOR_PORT = config["taxi"]["sensors_port"]
 TAXI_ID = config["taxi"]["taxi_id"]
 
 def conectar_con_taxi():
-    """Conecta el sensor al taxi y envía el ID del taxi como mensaje."""
-    try:
-        taxi_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        taxi_socket.connect((CENTRAL_IP, SENSOR_PORT))
-        taxi_socket.send(str(TAXI_ID).encode())
-        print(f"Sensor del taxi {TAXI_ID} conectado.")
-        listen_for_key_press(taxi_socket)
-    except (ConnectionRefusedError, ConnectionAbortedError) as e:
-        print("Taxi no disponible o conexión perdida.")
-        taxi_socket.close()
-    except Exception as e:
-        print(f"Error inesperado al conectar con el taxi: {e}")
-        taxi_socket.close()
+    """Establece la conexión con el taxi una vez y solo intenta reconectar si ocurre un error."""
+    while True:
+        try:
+            taxi_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            taxi_socket.connect((CENTRAL_IP, SENSOR_PORT))
+            taxi_socket.send(str(TAXI_ID).encode())
+            print(f"Sensor del taxi {TAXI_ID} conectado.")
+            listen_for_key_press(taxi_socket)
+            break
+        except (ConnectionRefusedError, ConnectionAbortedError):
+            print("Taxi no disponible o conexión perdida. Reintentando en 2 segundos...")
+            taxi_socket.close()
+            time.sleep(2)
+        except Exception as e:
+            print(f"Error inesperado al conectar con el taxi: {e}")
+            taxi_socket.close()
+            break
+
 
 def listen_for_key_press(taxi_socket):
     """Alterna entre OK y KO al presionar una tecla."""

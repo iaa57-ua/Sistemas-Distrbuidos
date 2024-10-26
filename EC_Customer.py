@@ -39,15 +39,28 @@ def solicitar_taxi(ubicacion_actual, destino):
     producer.flush()
 
 def esperar_confirmacion():
-    """Espera confirmación del taxi asignado y su llegada al destino."""
+    """Espera confirmaciones del taxi asignado a medida que se actualizan las etapas del recorrido."""
     print(f"Cliente {CLIENT_ID} esperando confirmación...")
+    recogido = False  # Estado de si el cliente ya fue recogido
+
     for message in consumer:
         confirmacion = json.loads(message.value.decode())
+        
         if confirmacion["client_id"] == CLIENT_ID:
-            print(f"Cliente {CLIENT_ID} recibió mensaje: {confirmacion['mensaje']}")
-            if "ha llegado al destino" in confirmacion["mensaje"]:
-                print("Taxi ha llegado al destino, finalizando.")
-                break
+            mensaje = confirmacion["mensaje"]
+            print(f"Cliente {CLIENT_ID} recibió mensaje: {mensaje}")
+            
+            # Mensaje cuando el taxi llega a recoger al cliente
+            if "ha llegado a la ubicación del cliente" in mensaje and not recogido:
+                print("Cliente subiendo al taxi.")
+                recogido = True
+            
+            # Mensaje cuando el taxi ha llegado al destino final
+            elif "ha llegado al destino final" in mensaje and recogido:
+                print("Cliente ha llegado a su destino final. Fin del recorrido.")
+                break  # Finaliza el bucle cuando el cliente ha llegado
+
+
 
 if __name__ == "__main__":
     # Solicitar taxi desde la ubicación (10, 5) hacia la ubicación (18, 12)

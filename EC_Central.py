@@ -76,12 +76,15 @@ def manejar_conexion_taxi(connection, taxis_activos):
         taxi_id = int(data)
         if autenticar_taxi(taxi_id, taxis_activos):
             connection.send("Autenticación exitosa".encode())
+            taxis_activos[taxi_id]["libre"] = True  # Actualiza el estado a libre
+            actualizar_base_datos(taxis_activos)  # Actualiza la base de datos después de autenticación exitosa
         else:
             connection.send("Autenticación fallida".encode())
     except ValueError:
         print(f"Error: Se esperaba un número para el ID del taxi, pero se recibió: {data}")
     finally:
         connection.close()
+
 
 def iniciar_socket_taxi(taxis_activos):
     """Inicia el socket para recibir conexiones de taxis y autenticarlos."""
@@ -107,20 +110,37 @@ def asignar_taxi(solicitud, taxis_activos):
             producer.send(TOPIC_CONFIRMATION, {"client_id": solicitud["client_id"], "mensaje": f"Taxi {taxi_id} asignado"})
             producer.flush()
             
-            # Enviar el destino al taxi a través de Kafka
-            enviar_destino_a_taxi(taxi_id, solicitud["destino"])
+            # Enviar ubicación de recogida y destino al taxi
+            enviar_destino_a_taxi(taxi_id, solicitud["ubicacion_actual"], solicitud["destino"])
+
+            # Actualizar base de datos después de la asignación
+            actualizar_base_datos(taxis_activos)
             return
     
     print("No hay taxis libres disponibles")
 
+
+def liberar_taxi(taxi_id, taxis_activos):
+    """Libera un taxi cuando ha terminado su recorrido."""
+    taxis_activos[taxi_id]["libre"] = True
+    taxis_activos[taxi_id]["destino"] = (None, None)
+    print(f"Taxi {taxi_id} liberado y listo para nuevas asignaciones.")
+
+    # Actualizar base de datos después de liberar el taxi
+    actualizar_base_datos(taxis_activos)
+
     
 # Función para enviar el destino al taxi a través de Kafka
-def enviar_destino_a_taxi(taxi_id, destino):
+def enviar_destino_a_taxi(taxi_id, ubicacion_cliente, destino):
     topic_taxi_commands = f'central_commands_{taxi_id}'
-    mensaje = {"destino": destino}
+    mensaje = {
+        "ubicacion_cliente": ubicacion_cliente,  # Nueva ubicación de recogida
+        "destino_final": destino  # Destino final del cliente
+    }
     producer.send(topic_taxi_commands, value=mensaje)
     producer.flush()
-    print(f"Destino {destino} enviado al taxi {taxi_id} en el tópico {topic_taxi_commands}")
+    print(f"Ubicación del cliente {ubicacion_cliente} y destino {destino} enviados al taxi {taxi_id} en el tópico {topic_taxi_commands}")
+
 
 
 def escuchar_peticiones_cliente(taxis_activos):
@@ -130,6 +150,15 @@ def escuchar_peticiones_cliente(taxis_activos):
         solicitud = mensaje.value
         print(f"Solicitud de cliente recibida: {solicitud}")
         asignar_taxi(solicitud, taxis_activos)
+
+#Usar en casos que cambiemos el estado de un taxi
+def actualizar_base_datos(taxis_activos, file_path='bdd.txt'):
+    with open(file_path, 'w') as f:
+        for taxi_id, datos in taxis_activos.items():
+            estado = "si" if datos["libre"] else "no"
+            f.write(f"{taxi_id}, {estado}, {datos['estado']}, {datos['posicion_actual'][0]}, {datos['posicion_actual'][1]}, {datos['destino'][0] or '-'}, {datos['destino'][1] or '-'}\n")
+    print("Base de datos actualizada.")
+
 
 def main():
     taxis_activos = leer_base_datos()

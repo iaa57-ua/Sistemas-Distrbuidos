@@ -117,32 +117,61 @@ def mover_taxi_hacia(destino_x, destino_y):
         producer.send(TOPIC_TAXI_STATUS, f"MOVE {taxi_pos}".encode())
         time.sleep(2)
 
+def realizar_recorrido(ubicacion_cliente, destino_final):
+    """Gestiona el proceso de recoger al cliente y luego llevarlo a su destino final."""
+    print(f"Taxi {TAXI_ID} dirigiéndose a la ubicación del cliente en {ubicacion_cliente} para recogerlo.")
+    
+    # Ir a la ubicación del cliente
+    mover_taxi_hacia(*ubicacion_cliente)
+    print(f"Taxi {TAXI_ID} ha llegado a la ubicación del cliente en {ubicacion_cliente}")
+    producer.send(TOPIC_TAXI_STATUS, f"Taxi {TAXI_ID} ha llegado a la ubicación del cliente en {ubicacion_cliente}".encode())
+    producer.flush()
+
+    # Indicar que el cliente ha subido al taxi
+    print(f"Cliente ha subido al taxi {TAXI_ID}")
+    producer.send(TOPIC_TAXI_STATUS, f"Cliente ha subido al taxi {TAXI_ID}".encode())
+    producer.flush()
+
+    # Llevar al cliente al destino final
+    print(f"Taxi {TAXI_ID} llevando al cliente al destino {destino_final}")
+    mover_taxi_hacia(*destino_final)
+    
+    print(f"Taxi {TAXI_ID} ha llegado al destino final {destino_final}")
+    producer.send(TOPIC_TAXI_STATUS, f"Taxi {TAXI_ID} ha llegado al destino final {destino_final}".encode())
+    producer.flush()
+
 def escuchar_sensores(conn):
-    """Escucha las señales de los sensores y ajusta el estado del taxi (OK/KO)."""
     global taxi_status
-    with conn:
-        print(f'Conexión establecida con el sensor en el puerto {SENSORS_PORT}')
-        while True:
-            try:
-                sensor_data = conn.recv(1024).decode()
-                if sensor_data:
-                    print(f'Sensor envió: {sensor_data}')
-                    taxi_status = sensor_data
-            except (ConnectionResetError, ConnectionAbortedError):
-                print("Conexión con el sensor perdida.")
-                conn.close()
+    while True:
+        try:
+            sensor_data = conn.recv(1024).decode()
+            if sensor_data:
+                print(f'Sensor envió: {sensor_data}')
+                taxi_status = sensor_data
+        except (ConnectionResetError, ConnectionAbortedError):
+            print("Conexión con el sensor perdida. Intentando reconectar...")
+            conn.close()
+            time.sleep(1)
+            conn = conectar_con_sensor()
+            if not conn:
+                print("No se pudo reconectar al sensor. Terminando escucha.")
                 break
+        except Exception as e:
+            print(f"Error inesperado en la comunicación con el sensor: {e}")
+            break
+
 
 def escuchar_destino():
-    """Escucha el destino desde Kafka y mueve el taxi hacia allí."""
+    """Escucha el destino desde Kafka y realiza el recorrido completo (recoger y llevar al destino)."""
     print(f"Esperando destino en el tópico {TOPIC_TAXI_COMMANDS}...")
     for message in consumer:
         comando = message.value
-        print(f"Mensaje recibido de la central: {comando}")  # Depuración
-        if "destino" in comando:
-            destino_x, destino_y = comando["destino"]
-            print(f"Destino recibido: [{destino_x}, {destino_y}]")  # Confirmar destino
-            mover_taxi_hacia(destino_x, destino_y)
+        print(f"Mensaje recibido de la central: {comando}")
+        if "ubicacion_cliente" in comando and "destino_final" in comando:
+            ubicacion_cliente = comando["ubicacion_cliente"]
+            destino_final = comando["destino_final"]
+            realizar_recorrido(ubicacion_cliente, destino_final)
+
 
 # Proceso principal
 sensor_conn = conectar_con_sensor()
