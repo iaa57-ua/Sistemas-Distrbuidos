@@ -1,7 +1,6 @@
 import socket
 import json
 import threading
-import time
 from kafka import KafkaProducer, KafkaConsumer
 
 # Función para cargar parámetros
@@ -26,7 +25,7 @@ BROKER = config["taxi"]["broker"]
 CENTRAL_SOCKET_IP = config["central"]["ip"]
 CENTRAL_SOCKET_PORT = config["central"]["port"]
 
-# Crear el productor de Kafka para enviar comandos a los taxis y confirmaciones a los clientes
+# Crear el productor de Kafka para enviar confirmaciones a clientes
 producer = KafkaProducer(
     bootstrap_servers=BROKER,
     value_serializer=lambda v: json.dumps(v).encode('utf-8')
@@ -39,34 +38,21 @@ consumer = KafkaConsumer(
     value_deserializer=lambda v: json.loads(v.decode('utf-8'))
 )
 
-# Diccionario de taxis
-taxis = {}
-
 def leer_base_datos(file_path='bdd.txt'):
     """Lee el archivo de la base de datos y devuelve un diccionario con la información de cada taxi."""
     taxis = {}
     try:
         with open(file_path, 'r') as f:
             for line in f:
-                # Dividir la línea en los valores esperados
                 taxi_id, libre, estado, coord_x_origen, coord_y_origen, coord_x_destino, coord_y_destino = line.strip().split(',')
-
-                # Convertir valores a los tipos necesarios
                 taxi_id = int(taxi_id)
                 libre = libre.strip().lower() == 'si'
-                coord_x_origen = int(coord_x_origen)
-                coord_y_origen = int(coord_y_origen)
-                
-                # Si no tiene destino, asignar `None`
-                coord_x_destino = None if coord_x_destino.strip() == '-' else int(coord_x_destino)
-                coord_y_destino = None if coord_y_destino.strip() == '-' else int(coord_y_destino)
-                
-                # Guardar la información del taxi en el diccionario
                 taxis[taxi_id] = {
                     "libre": libre,
                     "estado": estado.strip(),
-                    "posicion_actual": (coord_x_origen, coord_y_origen),
-                    "destino": (coord_x_destino, coord_y_destino)
+                    "posicion_actual": (int(coord_x_origen), int(coord_y_origen)),
+                    "destino": (None if coord_x_destino.strip() == '-' else int(coord_x_destino),
+                                None if coord_y_destino.strip() == '-' else int(coord_y_destino))
                 }
     except FileNotFoundError:
         print("El archivo de base de datos no existe.")
@@ -76,7 +62,7 @@ def leer_base_datos(file_path='bdd.txt'):
 
 def autenticar_taxi(taxi_id, taxis_activos):
     """Autentica un taxi comparando su ID contra los datos de la base de datos."""
-    if taxi_id in taxis_activos and taxis_activos[taxi_id]:
+    if taxi_id in taxis_activos and taxis_activos[taxi_id]["libre"]:
         print(f"Taxi {taxi_id} autenticado con éxito.")
         return True
     else:
@@ -88,7 +74,6 @@ def manejar_conexion_taxi(connection, taxis_activos):
     try:
         data = connection.recv(1024).decode().strip()
         taxi_id = int(data)
-
         if autenticar_taxi(taxi_id, taxis_activos):
             connection.send("Autenticación exitosa".encode())
         else:
@@ -109,30 +94,47 @@ def iniciar_socket_taxi(taxis_activos):
         connection, address = server_socket.accept()
         print(f"Conexión entrante de {address}")
         threading.Thread(target=manejar_conexion_taxi, args=(connection, taxis_activos)).start()
-        escuchar_peticiones_cliente() # Con esto escuha las peticiones que le envia el cliente
+
+def asignar_taxi(solicitud, taxis_activos):
+    """Busca un taxi libre y lo asigna a la solicitud del cliente."""
+    for taxi_id, datos in taxis_activos.items():
+        if datos["libre"]:
+            taxis_activos[taxi_id]["libre"] = False
+            taxis_activos[taxi_id]["destino"] = solicitud["destino"]
+            print(f"Asignando taxi {taxi_id} al cliente {solicitud['client_id']}")
+
+            # Enviar confirmación al cliente
+            producer.send(TOPIC_CONFIRMATION, {"client_id": solicitud["client_id"], "mensaje": f"Taxi {taxi_id} asignado"})
+            producer.flush()
+            
+            # Enviar el destino al taxi a través de Kafka
+            enviar_destino_a_taxi(taxi_id, solicitud["destino"])
+            return
+    
+    print("No hay taxis libres disponibles")
+
+    
+# Función para enviar el destino al taxi a través de Kafka
+def enviar_destino_a_taxi(taxi_id, destino):
+    topic_taxi_commands = f'central_commands_{taxi_id}'
+    mensaje = {"destino": destino}
+    producer.send(topic_taxi_commands, value=mensaje)
+    producer.flush()
+    print(f"Destino {destino} enviado al taxi {taxi_id} en el tópico {topic_taxi_commands}")
 
 
-def escuchar_peticiones_cliente():
+def escuchar_peticiones_cliente(taxis_activos):
     """Escucha continuamente las peticiones de los clientes en Kafka y procesa cada solicitud."""
     print("Central escuchando peticiones de clientes en Kafka...")
-    
-    # Consumir mensajes de Kafka en el tópico de solicitud de taxis
     for mensaje in consumer:
-        try:
-            solicitud = mensaje.value  # Obtener el valor del mensaje
-            print(f"Central recibió solicitud de cliente: {solicitud}")
-
-            # Llamar a la función para asignar un taxi en base a la solicitud recibida
-            
-        
-        except Exception as e:
-            print(f"Error al procesar la solicitud de cliente: {e}")
-
+        solicitud = mensaje.value
+        print(f"Solicitud de cliente recibida: {solicitud}")
+        asignar_taxi(solicitud, taxis_activos)
 
 def main():
-    """Función principal que inicia el sistema de la central."""
-    taxis_activos = leer_base_datos()  # Leer la base de datos para obtener los taxis activos
-    iniciar_socket_taxi(taxis_activos)
+    taxis_activos = leer_base_datos()
+    threading.Thread(target=iniciar_socket_taxi, args=(taxis_activos,)).start()
+    escuchar_peticiones_cliente(taxis_activos)
 
 if __name__ == '__main__':
     main()

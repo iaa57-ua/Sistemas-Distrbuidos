@@ -1,5 +1,3 @@
-import socket
-import threading
 import time
 from kafka import KafkaProducer, KafkaConsumer
 import json
@@ -14,19 +12,14 @@ def cargar_configuracion(file_path):
         print(f"Error al cargar el archivo de configuración: {e}")
         return None
 
-# Cargar la configuración desde un archivo JSON
 config = cargar_configuracion('config.json')
 
-# Parámetros de configuración del cliente
 BROKER = config["taxi"]["broker"]
 TOPIC_REQUEST_TAXI = config["cliente"]["topic_request_taxi"]
 TOPIC_CONFIRMATION = config["cliente"]["topic_confirmation"]
 CLIENT_ID = config["cliente"]["client_id"]
 
-# Configurar el Kafka Producer para enviar mensajes
 producer = KafkaProducer(bootstrap_servers=BROKER)
-
-# Configurar el Kafka Consumer para recibir mensajes
 consumer = KafkaConsumer(
     TOPIC_CONFIRMATION,
     bootstrap_servers=BROKER,
@@ -46,22 +39,18 @@ def solicitar_taxi(ubicacion_actual, destino):
     producer.flush()
 
 def esperar_confirmacion():
-    # Esperar confirmación del taxi
+    """Espera confirmación del taxi asignado y su llegada al destino."""
     print(f"Cliente {CLIENT_ID} esperando confirmación...")
-    while True:
-        try:
-            for message in consumer:
-                confirmacion = json.loads(message.value.decode())
-                if confirmacion["client_id"] == CLIENT_ID:
-                    print(f"Cliente {CLIENT_ID} ha recibido confirmación: {confirmacion['mensaje']}")
-                    return
-        except Exception as e:
-            print(f"Error al procesar confirmación: {e}")
-            break
+    for message in consumer:
+        confirmacion = json.loads(message.value.decode())
+        if confirmacion["client_id"] == CLIENT_ID:
+            print(f"Cliente {CLIENT_ID} recibió mensaje: {confirmacion['mensaje']}")
+            if "ha llegado al destino" in confirmacion["mensaje"]:
+                print("Taxi ha llegado al destino, finalizando.")
+                break
 
 if __name__ == "__main__":
     # Solicitar taxi desde la ubicación (10, 5) hacia la ubicación (18, 12)
     solicitar_taxi([10, 5], [18, 12])
-    
-    # Esperar la confirmación de que un taxi ha sido asignado
+    # Esperar la confirmación de que un taxi ha sido asignado y ha llegado
     esperar_confirmacion()
