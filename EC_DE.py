@@ -33,7 +33,7 @@ consumer = KafkaConsumer(
     group_id=f'taxi_{TAXI_ID}'
 )
 
-taxi_pos = [1, 1]  # Posición inicial
+taxi_pos = config["taxi"]["posicion_inicial"]  # Posición inicial
 taxi_status = 'OK'  # Estado inicial del taxi
 
 def conectar_con_sensor():
@@ -80,6 +80,7 @@ def mover_taxi_hacia(destino_x, destino_y):
     global taxi_pos, taxi_status
 
     print(f"Iniciando movimiento hacia el destino: [{destino_x}, {destino_y}]")
+    print(f"Taxi inicia en posición: {taxi_pos}")
 
     while True:
         # Verificar si ha alcanzado el destino
