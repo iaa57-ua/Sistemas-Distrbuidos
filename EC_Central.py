@@ -44,13 +44,12 @@ def leer_base_datos(file_path='bdd.txt'):
     try:
         with open(file_path, 'r') as f:
             for line in f:
-                taxi_id, libre, estado, coord_x_origen, coord_y_origen, coord_x_destino, coord_y_destino = line.strip().split(',')
+                taxi_id, libre, estado, coord_x_destino, coord_y_destino = line.strip().split(',')
                 taxi_id = int(taxi_id)
                 libre = libre.strip().lower() == 'si'
                 taxis[taxi_id] = {
                     "libre": libre,
                     "estado": estado.strip(),
-                    "posicion_actual": (int(coord_x_origen), int(coord_y_origen)),
                     "destino": (None if coord_x_destino.strip() == '-' else int(coord_x_destino),
                                 None if coord_y_destino.strip() == '-' else int(coord_y_destino))
                 }
@@ -156,7 +155,7 @@ def actualizar_base_datos(taxis_activos, file_path='bdd.txt'):
     with open(file_path, 'w') as f:
         for taxi_id, datos in taxis_activos.items():
             estado = "si" if datos["libre"] else "no"
-            f.write(f"{taxi_id}, {estado}, {datos['estado']}, {datos['posicion_actual'][0]}, {datos['posicion_actual'][1]}, {datos['destino'][0] or '-'}, {datos['destino'][1] or '-'}\n")
+            f.write(f"{taxi_id}, {estado}, {datos['estado']}, {datos['destino'][0] or '-'}, {datos['destino'][1] or '-'}\n")
     print("Base de datos actualizada.")
 
 

@@ -27,7 +27,8 @@ consumer = KafkaConsumer(
     auto_offset_reset='earliest'
 )
 
-def solicitar_taxi(ubicacion_actual, destino):
+def solicitar_taxi(destino):
+    ubicacion_actual = config["taxi"]["posicion_inicial"]
     """Envía una solicitud de taxi a la central."""
     solicitud = {
         "client_id": CLIENT_ID,
@@ -63,7 +64,11 @@ def esperar_confirmacion():
 
 
 if __name__ == "__main__":
+    #Pedimos coordenas al usuario
+    entrada = input("Indique el destino x,y: ")
+    x, y = map(int, entrada.split(','))  # Separamos y convertimos a enteros
+    
     # Solicitar taxi desde la ubicación (10, 5) hacia la ubicación (18, 12)
-    solicitar_taxi([10, 5], [18, 12])
+    solicitar_taxi([x, y])
     # Esperar la confirmación de que un taxi ha sido asignado y ha llegado
     esperar_confirmacion()
