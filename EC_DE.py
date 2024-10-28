@@ -198,6 +198,7 @@ def escuchar_destino():
             if isinstance(destino_final, str):
                 destino_final = list(map(int, destino_final.split(',')))
 
+#             Falla aquí la puta mierda esta
             # Mover al taxi a la ubicación del cliente primero
             print(f"Destino de recogida recibido: {ubicacion_cliente}")
             mover_taxi_hacia(ubicacion_cliente[0], ubicacion_cliente[1])

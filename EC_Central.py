@@ -41,8 +41,8 @@ consumer = KafkaConsumer(
 
 # Tamaño del mapa y su inicialización
 TAMANO_MAPA = 20
-mapa = [[' ' for _ in range(TAMANO_MAPA)] for _ in range(TAMANO_MAPA)]
-LINE = f"{'-' * 70}\n"
+mapa = [[["."] for _ in range(20)] for _ in range(20)]
+LINE = f"{'-' * 100}\n"
 
 # Funciones de manejo de mapa
 def mostrar_mapa():
@@ -182,27 +182,43 @@ def actualizar_base_datos(taxis_activos, file_path='bdd.txt'):
             f.write(f"{taxi_id}, {estado}, {datos['estado']}, {datos['destino'][0] or '-'}, {datos['destino'][1] or '-'}\n")
     print("Base de datos actualizada.")
 
-'''def pintar_mapa(taxis, clientes):
-    print("\n" * 6)
-
+EMPTY = "."
+def pintar_mapa():
+    print("\n" * 5)
+    
     sys.stdout.write(LINE)
-    sys.stdout.write(f"{' ':<15} *** EASY CAB Release 1 ***\n")
+    sys.stdout.write(f"{' ':<20} *** EASY CAB Release 1 ***\n")
     sys.stdout.write(LINE)
     
     # Mostrar encabezado de taxis y clientes
-    sys.stdout.write(f"{' ':<10} {'Taxis':<19} {'|':<8} {'Clientes'}\n")
+    sys.stdout.write(f"{' ':<20} {'Taxis':<29} {'|':<20} {'Clientes'}\n")
     sys.stdout.write(LINE)
-    sys.stdout.write(f"{' ':<3} {'Id.':<5} {'Destino':<10} {'Estado':<9} {'|':<2} {'Id.':<5} {'Destino':<10} {'Estado':<10}\n")
-    sys.stdout.write(LINE)'''
-    
-    
+    sys.stdout.write(f"{' ':<8} {'Id.':<10} {'Destino':<15} {'Estado':<14} {'|':<7} {'Id.':<10} {'Destino':<15} {'Estado':<15}\n")
+    sys.stdout.write(LINE)
+
+    print("hay que hacer algo con los taxis y los clientes")
+
+    sys.stdout.write(LINE + "\n")
+    sys.stdout.write("   " + " ".join([f"{i:2}" for i in range(1, 20 + 1)]) + "\n")
+    sys.stdout.write(LINE + "\n")
+
+    # Imprimir filas del mapa vacío
+    for row in range(20):
+        sys.stdout.write(f"{row + 1:<2} ")  # Número de la fila al inicio
+        for col in range(20):
+            sys.stdout.write(f"{EMPTY:<2} ")  # Cada celda como un punto
+        sys.stdout.write("\n")  # Nueva línea después de cada fila
+
+    sys.stdout.write(LINE + "\n")
+    sys.stdout.flush()
+            
     
     
 
 
 def main():
     taxis_activos = leer_base_datos()
-    #pintar_mapa(taxis_activos, clientes_conectados)
+    #pintar_mapa()
     threading.Thread(target=iniciar_socket_taxi, args=(taxis_activos,)).start()
     escuchar_peticiones_cliente(taxis_activos)
 
