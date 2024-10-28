@@ -43,13 +43,9 @@ consumer = KafkaConsumer(
 TAMANO_MAPA = 20
 mapa = [[["."] for _ in range(20)] for _ in range(20)]
 LINE = f"{'-' * 100}\n"
+# Cargar configuraciones de ubicaciones y clientes del archivo
+locations = {loc["Id"]: list(map(int, loc["POS"].split(','))) for loc in config["locations"]}
 
-# Funciones de manejo de mapa
-def mostrar_mapa():
-    print("Mapa de la ciudad:")
-    for fila in mapa:
-        print(" ".join(fila))
-    print("\n")
 
 def actualizar_mapa(tipo, id_, posicion, estado=None):
     x, y = posicion
@@ -159,7 +155,8 @@ def enviar_destino_a_taxi(taxi_id, ubicacion_cliente, destino):
     topic_taxi_commands = f'central_commands_{taxi_id}'
     mensaje = {
         "ubicacion_cliente": ubicacion_cliente,  # Ubicación de recogida como lista de enteros
-        "destino_final": destino  # Destino final también en lista de enteros
+        "destino_final": destino,  # Destino final también en lista de enteros
+        "asignado" : True
     }
     producer.send(topic_taxi_commands, value=mensaje)
     producer.flush()
@@ -174,6 +171,26 @@ def escuchar_peticiones_cliente(taxis_activos):
         print(f"Solicitud de cliente recibida: {solicitud}")
         asignar_taxi(solicitud, taxis_activos)
 
+def manejar_llegada_destino(mensaje):
+    """Procesa la llegada de un taxi al destino del cliente."""
+    taxi_id = mensaje["taxi_id"]
+    destino = mensaje["destino"]
+
+    # Notificar al cliente que el taxi ha llegado
+    mensaje_cliente = {
+        "client_id": taxi_id,  # Este puede ser el ID del taxi para simplificación
+        "mensaje": f"Taxi {taxi_id} ha llegado a su destino {destino}"
+    }
+    producer.send(TOPIC_CONFIRMATION, value=mensaje_cliente)
+    producer.flush()
+
+    # Actualizar estado y disponibilidad del taxi en la base de datos
+    taxis_activos[taxi_id]["libre"] = True
+    taxis_activos[taxi_id]["estado"] = "rojo"
+    taxis_activos[taxi_id]["destino"] = (None, None)
+    actualizar_base_datos(taxis_activos)
+
+
 #Usar en casos que cambiemos el estado de un taxi
 def actualizar_base_datos(taxis_activos, file_path='bdd.txt'):
     with open(file_path, 'w') as f:
@@ -183,44 +200,57 @@ def actualizar_base_datos(taxis_activos, file_path='bdd.txt'):
     print("Base de datos actualizada.")
 
 EMPTY = "."
+
+def mostrar_mapa():
+    """Imprime el mapa actual, incluyendo taxis, clientes y destinos predefinidos."""
+    print("Mapa de la ciudad:")
+    for fila in mapa:
+        print(" ".join(fila))
+    print("\n")
+
 def pintar_mapa():
+    """Dibuja el mapa inicial y coloca las ubicaciones predefinidas desde `locations`."""
     print("\n" * 5)
-    
     sys.stdout.write(LINE)
     sys.stdout.write(f"{' ':<20} *** EASY CAB Release 1 ***\n")
     sys.stdout.write(LINE)
-    
-    # Mostrar encabezado de taxis y clientes
+
+    # Encabezado de taxis y clientes
     sys.stdout.write(f"{' ':<20} {'Taxis':<29} {'|':<20} {'Clientes'}\n")
     sys.stdout.write(LINE)
     sys.stdout.write(f"{' ':<8} {'Id.':<10} {'Destino':<15} {'Estado':<14} {'|':<7} {'Id.':<10} {'Destino':<15} {'Estado':<15}\n")
     sys.stdout.write(LINE)
 
-    print("hay que hacer algo con los taxis y los clientes")
-
     sys.stdout.write(LINE + "\n")
-    sys.stdout.write("   " + " ".join([f"{i:2}" for i in range(1, 20 + 1)]) + "\n")
+    sys.stdout.write("   " + " ".join([f"{i:2}" for i in range(1, 21)]) + "\n")  # Ajuste de ancho
     sys.stdout.write(LINE + "\n")
 
-    # Imprimir filas del mapa vacío
+    # Limpiar el mapa y poner los puntos de interés
+    for x in range(20):
+        for y in range(20):
+            mapa[x][y] = EMPTY  # Cada celda como un punto
+
+    # Colocar ubicaciones desde `locations`
+    for loc_id, (x, y) in locations.items():
+        mapa[x - 1][y - 1] = loc_id  # Identificación de ubicación por ID
+
+    # Imprimir filas del mapa con ubicaciones
     for row in range(20):
-        sys.stdout.write(f"{row + 1:<2} ")  # Número de la fila al inicio
+        sys.stdout.write(f"{row + 1:<2} ")
         for col in range(20):
-            sys.stdout.write(f"{EMPTY:<2} ")  # Cada celda como un punto
+            sys.stdout.write(f"{mapa[row][col]:<2} ")
         sys.stdout.write("\n")  # Nueva línea después de cada fila
 
     sys.stdout.write(LINE + "\n")
     sys.stdout.flush()
-            
-    
-    
 
-
+# Llamar a `pintar_mapa` al iniciar
 def main():
     taxis_activos = leer_base_datos()
-    #pintar_mapa()
+    pintar_mapa()  # Dibuja el mapa al inicio mostrando ubicaciones
     threading.Thread(target=iniciar_socket_taxi, args=(taxis_activos,)).start()
     escuchar_peticiones_cliente(taxis_activos)
 
 if __name__ == '__main__':
     main()
+

@@ -129,7 +129,6 @@ def mover_taxi_hacia(destino_x, destino_y):
 
 def realizar_recorrido(ubicacion_cliente, destino_final):
     """Gestiona el proceso de recoger al cliente y luego llevarlo a su destino final."""
-    
     # Asegurarse de que destino_final sea una lista de enteros
     if isinstance(destino_final, str):
         destino_final = list(map(int, destino_final.split(',')))
@@ -151,9 +150,20 @@ def realizar_recorrido(ubicacion_cliente, destino_final):
     print(f"Taxi {TAXI_ID} llevando al cliente al destino {destino_final}")
     mover_taxi_hacia(*destino_final)
     
+    # Notificar a la central que ha llegado al destino final
     print(f"Taxi {TAXI_ID} ha llegado al destino final {destino_final}")
-    producer.send(TOPIC_TAXI_STATUS, f"Taxi {TAXI_ID} ha llegado al destino final {destino_final}".encode())
+    mensaje_llegada = {
+        "taxi_id": TAXI_ID,
+        "destino": destino_final,
+        "llegada": True
+    }
+    producer.send(TOPIC_TAXI_STATUS, json.dumps(mensaje_llegada).encode())  # Enviar llegada a la central
     producer.flush()
+    
+    # Poner el taxi en estado libre y rojo
+    actualizar_estado_en_central("rojo")
+    taxi_pos = config["taxi"]["posicion_inicial"]  # Reiniciar posición al punto inicial
+
 
 
 def escuchar_sensores(conn):
@@ -184,13 +194,29 @@ def escuchar_destino():
     """Escucha el destino desde Kafka y mueve el taxi hacia allí solo cuando recibe una solicitud de destino válida."""
     print(f"Esperando destino en el tópico {TOPIC_TAXI_COMMANDS}...")
 
+    # Asegurarse de que el consumidor esté suscrito y tenga particiones asignadas
+    consumer.subscribe([TOPIC_TAXI_COMMANDS])
+    consumer.poll(0)  # Forzar la suscripción inmediata
+
+    # Espera hasta que se asignen particiones
+    while not consumer.assignment():
+        print("Esperando asignación de particiones...")
+        time.sleep(0.5)
+
+    # Limpia mensajes residuales para evitar movimientos no deseados
+    consumer.seek_to_end()  # Coloca el consumidor al final del tópico
+
     # Procesa solo mensajes nuevos y válidos
     for message in consumer:
         comando = message.value
         print(f"Mensaje recibido de la central: {comando}")
-        
-        # Verifica que el mensaje tenga la estructura esperada
-        if isinstance(comando, dict) and "ubicacion_cliente" in comando and "destino_final" in comando:
+
+        # Verifica que el mensaje tenga la estructura esperada y la solicitud sea confirmada
+        if (isinstance(comando, dict) and 
+            "ubicacion_cliente" in comando and 
+            "destino_final" in comando and 
+            comando.get("asignado", False) == True):  # Verifica si está asignado
+
             ubicacion_cliente = comando["ubicacion_cliente"]
             destino_final = comando["destino_final"]
 
@@ -198,8 +224,7 @@ def escuchar_destino():
             if isinstance(destino_final, str):
                 destino_final = list(map(int, destino_final.split(',')))
 
-#             Falla aquí la puta mierda esta
-            # Mover al taxi a la ubicación del cliente primero
+            # Mueve el taxi a la ubicación del cliente primero
             print(f"Destino de recogida recibido: {ubicacion_cliente}")
             mover_taxi_hacia(ubicacion_cliente[0], ubicacion_cliente[1])
 
