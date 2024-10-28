@@ -38,6 +38,26 @@ consumer = KafkaConsumer(
     value_deserializer=lambda v: json.loads(v.decode('utf-8'))
 )
 
+# Tamaño del mapa y su inicialización
+TAMANO_MAPA = 20
+mapa = [[' ' for _ in range(TAMANO_MAPA)] for _ in range(TAMANO_MAPA)]
+
+# Funciones de manejo de mapa
+def mostrar_mapa():
+    print("Mapa de la ciudad:")
+    for fila in mapa:
+        print(" ".join(fila))
+    print("\n")
+
+def actualizar_mapa(tipo, id_, posicion, estado=None):
+    x, y = posicion
+    if tipo == "taxi":
+        mapa[x-1][y-1] = f"{id_}" if estado == "verde" else f"{id_}"
+    elif tipo == "cliente":
+        mapa[x-1][y-1] = "c"
+    elif tipo == "destino":
+        mapa[x-1][y-1] = "D"
+
 def leer_base_datos(file_path='bdd.txt'):
     """Lee el archivo de la base de datos y devuelve un diccionario con la información de cada taxi."""
     taxis = {}
@@ -73,17 +93,20 @@ def manejar_conexion_taxi(connection, taxis_activos):
     try:
         data = connection.recv(1024).decode().strip()
         taxi_id = int(data)
-        if autenticar_taxi(taxi_id, taxis_activos):
+        if taxi_id in taxis_activos:
+            # Cambia el estado a disponible y el color a rojo al autenticarse
+            taxis_activos[taxi_id]["libre"] = True
+            taxis_activos[taxi_id]["estado"] = "rojo"
+            print(f"Taxi {taxi_id} autenticado con éxito y disponible en estado 'rojo'.")
             connection.send("Autenticación exitosa".encode())
-            taxis_activos[taxi_id]["libre"] = True  # Actualiza el estado a libre
-            actualizar_base_datos(taxis_activos)  # Actualiza la base de datos después de autenticación exitosa
+            actualizar_base_datos(taxis_activos)  # Actualiza la base de datos
         else:
+            print(f"Taxi {taxi_id} rechazado. No está activo o no registrado.")
             connection.send("Autenticación fallida".encode())
     except ValueError:
         print(f"Error: Se esperaba un número para el ID del taxi, pero se recibió: {data}")
     finally:
         connection.close()
-
 
 def iniciar_socket_taxi(taxis_activos):
     """Inicia el socket para recibir conexiones de taxis y autenticarlos."""
@@ -102,13 +125,14 @@ def asignar_taxi(solicitud, taxis_activos):
     for taxi_id, datos in taxis_activos.items():
         if datos["libre"]:
             taxis_activos[taxi_id]["libre"] = False
+            taxis_activos[taxi_id]["estado"] = "verde"
             taxis_activos[taxi_id]["destino"] = solicitud["destino"]
-            print(f"Asignando taxi {taxi_id} al cliente {solicitud['client_id']}")
-
-            # Enviar confirmación al cliente
+            
+            #Confirmar asignación al cliente
+            print(f"Asignando taxi {taxi_id} al cliente {solicitud['client_id']} con estado 'verde'.")
             producer.send(TOPIC_CONFIRMATION, {"client_id": solicitud["client_id"], "mensaje": f"Taxi {taxi_id} asignado"})
             producer.flush()
-            
+
             # Enviar ubicación de recogida y destino al taxi
             enviar_destino_a_taxi(taxi_id, solicitud["ubicacion_actual"], solicitud["destino"])
 
@@ -117,7 +141,6 @@ def asignar_taxi(solicitud, taxis_activos):
             return
     
     print("No hay taxis libres disponibles")
-
 
 def liberar_taxi(taxi_id, taxis_activos):
     """Libera un taxi cuando ha terminado su recorrido."""
@@ -133,13 +156,12 @@ def liberar_taxi(taxi_id, taxis_activos):
 def enviar_destino_a_taxi(taxi_id, ubicacion_cliente, destino):
     topic_taxi_commands = f'central_commands_{taxi_id}'
     mensaje = {
-        "ubicacion_cliente": ubicacion_cliente,  # Nueva ubicación de recogida
-        "destino_final": destino  # Destino final del cliente
+        "ubicacion_cliente": ubicacion_cliente,  # Ubicación de recogida como lista de enteros
+        "destino_final": destino  # Destino final también en lista de enteros
     }
     producer.send(topic_taxi_commands, value=mensaje)
     producer.flush()
     print(f"Ubicación del cliente {ubicacion_cliente} y destino {destino} enviados al taxi {taxi_id} en el tópico {topic_taxi_commands}")
-
 
 
 def escuchar_peticiones_cliente(taxis_activos):

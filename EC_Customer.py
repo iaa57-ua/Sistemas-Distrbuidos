@@ -18,6 +18,7 @@ BROKER = config["taxi"]["broker"]
 TOPIC_REQUEST_TAXI = config["cliente"]["topic_request_taxi"]
 TOPIC_CONFIRMATION = config["cliente"]["topic_confirmation"]
 CLIENT_ID = config["cliente"]["client_id"]
+UBICACION = config["cliente"]["ubicacion_inicial"]
 
 producer = KafkaProducer(bootstrap_servers=BROKER)
 consumer = KafkaConsumer(
@@ -28,14 +29,12 @@ consumer = KafkaConsumer(
 )
 
 def solicitar_taxi(destino):
-    ubicacion_actual = config["taxi"]["posicion_inicial"]
-    """Envía una solicitud de taxi a la central."""
     solicitud = {
         "client_id": CLIENT_ID,
-        "ubicacion_actual": ubicacion_actual,
+        "ubicacion_actual": UBICACION,
         "destino": destino
     }
-    print(f"Cliente {CLIENT_ID} solicitando taxi desde {ubicacion_actual} hacia {destino}")
+    print(f"Cliente {CLIENT_ID} solicitando taxi desde {UBICACION} hacia {destino}")
     producer.send(TOPIC_REQUEST_TAXI, json.dumps(solicitud).encode('utf-8'))
     producer.flush()
 
@@ -66,9 +65,8 @@ def esperar_confirmacion():
 if __name__ == "__main__":
     #Pedimos coordenas al usuario
     entrada = input("Indique el destino x,y: ")
-    x, y = map(int, entrada.split(','))  # Separamos y convertimos a enteros
-    
-    # Solicitar taxi desde la ubicación (10, 5) hacia la ubicación (18, 12)
-    solicitar_taxi([x, y])
+    x, y = map(int, entrada.split(','))  # Convertir a enteros
+    solicitar_taxi([x, y])  # Pasar el destino como lista de enteros
+
     # Esperar la confirmación de que un taxi ha sido asignado y ha llegado
     esperar_confirmacion()

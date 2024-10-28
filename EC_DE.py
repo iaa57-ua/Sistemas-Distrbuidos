@@ -30,7 +30,8 @@ consumer = KafkaConsumer(
     TOPIC_TAXI_COMMANDS,
     bootstrap_servers=BROKER,
     value_deserializer=lambda v: json.loads(v.decode('utf-8')),
-    group_id=f'taxi_{TAXI_ID}'
+    group_id=f'taxi_{TAXI_ID}',
+    auto_offset_reset='latest'  # Escuchar solo mensajes nuevos
 )
 
 taxi_pos = config["taxi"]["posicion_inicial"]  # Posición inicial
@@ -82,19 +83,26 @@ def mover_taxi_hacia(destino_x, destino_y):
     print(f"Iniciando movimiento hacia el destino: [{destino_x}, {destino_y}]")
     print(f"Taxi inicia en posición: {taxi_pos}")
 
+    # Cambiar estado a verde al iniciar el movimiento
+    actualizar_estado_en_central("verde")
+    
     while True:
+        # Si el taxi está en KO, cambia el estado a "rojo" en la central y espera
+        if taxi_status == 'KO':
+            actualizar_estado_en_central("rojo")  # Reflejar el estado en la central
+            print(f'Taxi {TAXI_ID} en estado KO, esperando cambio a OK...')
+            producer.send(TOPIC_TAXI_STATUS, f"TAXI_{TAXI_ID}_KO".encode())  # Notificar KO a Kafka
+            producer.flush()
+            time.sleep(2)
+            continue
+        
         # Verificar si ha alcanzado el destino
         if taxi_pos == [destino_x, destino_y]:
             print(f'Taxi {TAXI_ID} ha llegado al destino {taxi_pos}')
             producer.send(TOPIC_TAXI_STATUS, f"Taxi {TAXI_ID} ha llegado al destino {taxi_pos}".encode())
             producer.flush()
+            actualizar_estado_en_central("rojo")  # Cambiar a "rojo" al llegar al destino
             break
-
-        # Detenerse si el estado es KO
-        if taxi_status == 'KO':
-            print(f'Taxi {TAXI_ID} detenido, esperando cambio de estado a OK...')
-            time.sleep(2)
-            continue
 
         # Calcular delta con movimiento circular en X
         delta_x = (destino_x - taxi_pos[0]) % 20
@@ -118,8 +126,14 @@ def mover_taxi_hacia(destino_x, destino_y):
         producer.send(TOPIC_TAXI_STATUS, f"MOVE {taxi_pos}".encode())
         time.sleep(2)
 
+
 def realizar_recorrido(ubicacion_cliente, destino_final):
     """Gestiona el proceso de recoger al cliente y luego llevarlo a su destino final."""
+    
+    # Asegurarse de que destino_final sea una lista de enteros
+    if isinstance(destino_final, str):
+        destino_final = list(map(int, destino_final.split(',')))
+
     print(f"Taxi {TAXI_ID} dirigiéndose a la ubicación del cliente en {ubicacion_cliente} para recogerlo.")
     
     # Ir a la ubicación del cliente
@@ -141,6 +155,7 @@ def realizar_recorrido(ubicacion_cliente, destino_final):
     producer.send(TOPIC_TAXI_STATUS, f"Taxi {TAXI_ID} ha llegado al destino final {destino_final}".encode())
     producer.flush()
 
+
 def escuchar_sensores(conn):
     global taxi_status
     while True:
@@ -149,6 +164,10 @@ def escuchar_sensores(conn):
             if sensor_data:
                 print(f'Sensor envió: {sensor_data}')
                 taxi_status = sensor_data
+                if taxi_status == 'KO':
+                    actualizar_estado_en_central("rojo")
+                elif taxi_status == 'OK' and taxi_pos != destino:  # Si vuelve a OK y está en movimiento
+                    actualizar_estado_en_central("verde")
         except (ConnectionResetError, ConnectionAbortedError):
             print("Conexión con el sensor perdida. Intentando reconectar...")
             conn.close()
@@ -161,18 +180,41 @@ def escuchar_sensores(conn):
             print(f"Error inesperado en la comunicación con el sensor: {e}")
             break
 
-
 def escuchar_destino():
-    """Escucha el destino desde Kafka y realiza el recorrido completo (recoger y llevar al destino)."""
+    """Escucha el destino desde Kafka y mueve el taxi hacia allí solo cuando recibe una solicitud de destino válida."""
     print(f"Esperando destino en el tópico {TOPIC_TAXI_COMMANDS}...")
+
+    # Procesa solo mensajes nuevos y válidos
     for message in consumer:
         comando = message.value
         print(f"Mensaje recibido de la central: {comando}")
-        if "ubicacion_cliente" in comando and "destino_final" in comando:
+        
+        # Verifica que el mensaje tenga la estructura esperada
+        if isinstance(comando, dict) and "ubicacion_cliente" in comando and "destino_final" in comando:
             ubicacion_cliente = comando["ubicacion_cliente"]
             destino_final = comando["destino_final"]
-            realizar_recorrido(ubicacion_cliente, destino_final)
 
+            # Asegúrate de que destino_final esté en el formato correcto
+            if isinstance(destino_final, str):
+                destino_final = list(map(int, destino_final.split(',')))
+
+            # Mover al taxi a la ubicación del cliente primero
+            print(f"Destino de recogida recibido: {ubicacion_cliente}")
+            mover_taxi_hacia(ubicacion_cliente[0], ubicacion_cliente[1])
+
+            # Luego, al destino final
+            print(f"Destino final recibido: {destino_final}")
+            mover_taxi_hacia(destino_final[0], destino_final[1])
+
+
+def actualizar_estado_en_central(color):
+    """Envía el color actual del taxi (rojo o verde) a la central para actualización en la base de datos."""
+    mensaje = {
+        "taxi_id": TAXI_ID,
+        "estado": color
+    }
+    producer.send(TOPIC_TAXI_STATUS, json.dumps(mensaje).encode())
+    producer.flush()
 
 # Proceso principal
 sensor_conn = conectar_con_sensor()
