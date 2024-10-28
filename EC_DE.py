@@ -166,7 +166,7 @@ def escuchar_sensores(conn):
                 taxi_status = sensor_data
                 if taxi_status == 'KO':
                     actualizar_estado_en_central("rojo")
-                elif taxi_status == 'OK' and taxi_pos != destino:  # Si vuelve a OK y está en movimiento
+                elif taxi_status == 'OK':  # Si vuelve a OK y está en movimiento
                     actualizar_estado_en_central("verde")
         except (ConnectionResetError, ConnectionAbortedError):
             print("Conexión con el sensor perdida. Intentando reconectar...")

@@ -2,6 +2,7 @@ import socket
 import json
 import threading
 from kafka import KafkaProducer, KafkaConsumer
+import sys
 
 # Función para cargar parámetros
 def cargar_configuracion(file_path):
@@ -41,6 +42,7 @@ consumer = KafkaConsumer(
 # Tamaño del mapa y su inicialización
 TAMANO_MAPA = 20
 mapa = [[' ' for _ in range(TAMANO_MAPA)] for _ in range(TAMANO_MAPA)]
+LINE = f"{'-' * 70}\n"
 
 # Funciones de manejo de mapa
 def mostrar_mapa():
@@ -180,9 +182,27 @@ def actualizar_base_datos(taxis_activos, file_path='bdd.txt'):
             f.write(f"{taxi_id}, {estado}, {datos['estado']}, {datos['destino'][0] or '-'}, {datos['destino'][1] or '-'}\n")
     print("Base de datos actualizada.")
 
+'''def pintar_mapa(taxis, clientes):
+    print("\n" * 6)
+
+    sys.stdout.write(LINE)
+    sys.stdout.write(f"{' ':<15} *** EASY CAB Release 1 ***\n")
+    sys.stdout.write(LINE)
+    
+    # Mostrar encabezado de taxis y clientes
+    sys.stdout.write(f"{' ':<10} {'Taxis':<19} {'|':<8} {'Clientes'}\n")
+    sys.stdout.write(LINE)
+    sys.stdout.write(f"{' ':<3} {'Id.':<5} {'Destino':<10} {'Estado':<9} {'|':<2} {'Id.':<5} {'Destino':<10} {'Estado':<10}\n")
+    sys.stdout.write(LINE)'''
+    
+    
+    
+    
+
 
 def main():
     taxis_activos = leer_base_datos()
+    #pintar_mapa(taxis_activos, clientes_conectados)
     threading.Thread(target=iniciar_socket_taxi, args=(taxis_activos,)).start()
     escuchar_peticiones_cliente(taxis_activos)
 
