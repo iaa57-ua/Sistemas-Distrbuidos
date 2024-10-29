@@ -22,6 +22,7 @@ SENSORS_PORT = config["taxi"]["sensors_port"]
 CENTRAL_IP = config["central"]["ip"]
 CENTRAL_PORT = config["central"]["port"]
 BROKER = config["taxi"]["broker"]
+TOPIC_TAXI_ESTADO = 'taxiEstado'
 TOPIC_TAXI_STATUS = 'taxiStatus'
 TOPIC_TAXI_COMMANDS = f'central_commands_{TAXI_ID}'  # Tópico donde recibe el destino desde la central
 
@@ -247,7 +248,7 @@ def actualizar_estado_en_central(color):
         "estado": color,
         "pos": taxi_pos
     }
-    producer.send(TOPIC_TAXI_STATUS, json.dumps(mensaje).encode())
+    producer.send(TOPIC_TAXI_ESTADO, json.dumps(mensaje).encode())
     producer.flush()
 
 

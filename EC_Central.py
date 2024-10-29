@@ -6,6 +6,7 @@ import sys
 import colorama
 from colorama import Fore, Style
 
+
 colorama.init(autoreset=True)
 
 # Función para cargar parámetros
@@ -27,7 +28,7 @@ TOPIC_CONFIRMATION = config["cliente"]["topic_confirmation"]
 BROKER = config["taxi"]["broker"]
 
 # Definir el tópico de estado de taxis (por ejemplo, usando un patrón para múltiples taxis)
-TOPIC_TAXI_STATUS_PATTERN = 'taxiStatus'  # Regex para escuchar todos los tópicos de estado de taxis
+TOPIC_TAXI_STATUS_PATTERN = 'taxiEstado'  # Regex para escuchar todos los tópicos de estado de taxis
 
 # Puerto y dirección del socket para autenticación
 CENTRAL_SOCKET_IP = config["central"]["ip"]
@@ -58,9 +59,18 @@ locations = {loc["Id"]: list(map(int, loc["POS"].split(','))) for loc in config[
 def actualizar_mapa(tipo, id_, posicion, estado=None):
     x, y = posicion
     if tipo == "taxi":
-        # Representa el taxi con el ID en el color correspondiente
         color = Fore.GREEN if estado == "verde" else Fore.RED
+        for fila in range(20):
+            for col in range(20):                
+                 if mapa[fila][col] == f"{Fore.GREEN}{id_}{Style.RESET_ALL}" or mapa[fila][col] == f"{Fore.RED}{id_}{Style.RESET_ALL}":
+                    mapa[fila][col] = EMPTY
+
+        for loc_id, (a, b) in locations.items():
+            mapa[a - 1][b - 1] = Fore.BLUE + loc_id + Style.RESET_ALL
+        
+        # Representa el taxi con el ID en el color correspondiente
         mapa[x - 1][y - 1] = f"{color}{id_}{Style.RESET_ALL}"  # Actualiza la celda en el mapa
+        
     elif tipo == "cliente":
         color = Fore.YELLOW
         mapa[x - 1][y - 1] = f"{color}{id_}{Style.RESET_ALL}"
@@ -125,7 +135,6 @@ def manejar_conexion_taxi(connection, taxis_activos):
     finally:
         connection.close()
 
-# Seguir aqui
 def escuchar_actualizaciones_taxi(taxis_activos):
     """Escucha actualizaciones de posición de los taxis en Kafka y actualiza el mapa en tiempo real."""
     print("Central escuchando actualizaciones de posición de los taxis en Kafka...")
@@ -134,10 +143,9 @@ def escuchar_actualizaciones_taxi(taxis_activos):
     consumer_status = KafkaConsumer(TOPIC_TAXI_STATUS_PATTERN)
 
     for mensaje in consumer_status:
-        data = mensaje.value
-        taxi_id = data.get("taxi_id")
-        nueva_pos = data.get("pos")
-        print("izan va a perder todas y merecido")
+        data = json.loads(mensaje.value.decode('utf-8'))
+        taxi_id = data["taxi_id"]
+        nueva_pos = data["pos"]
         if taxi_id and nueva_pos:
             estado_taxi = taxis_activos[taxi_id]["estado"]
             actualizar_mapa("taxi", taxi_id, nueva_pos, estado=estado_taxi)  # Actualiza el mapa

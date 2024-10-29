@@ -1,4 +1,4 @@
-1, si, rojo, 5, 3
+1, no, verde, 5, 3
 2, no, rojo, -, -
 3, no, rojo, -, -
 4, no, rojo, -, -
