@@ -27,7 +27,7 @@ TOPIC_CONFIRMATION = config["cliente"]["topic_confirmation"]
 BROKER = config["taxi"]["broker"]
 
 # Definir el tópico de estado de taxis (por ejemplo, usando un patrón para múltiples taxis)
-TOPIC_TAXI_STATUS_PATTERN = '^taxi_status_.*'  # Regex para escuchar todos los tópicos de estado de taxis
+TOPIC_TAXI_STATUS_PATTERN = 'taxiStatus'  # Regex para escuchar todos los tópicos de estado de taxis
 
 # Puerto y dirección del socket para autenticación
 CENTRAL_SOCKET_IP = config["central"]["ip"]
@@ -62,9 +62,12 @@ def actualizar_mapa(tipo, id_, posicion, estado=None):
         color = Fore.GREEN if estado == "verde" else Fore.RED
         mapa[x - 1][y - 1] = f"{color}{id_}{Style.RESET_ALL}"  # Actualiza la celda en el mapa
     elif tipo == "cliente":
-        mapa[x - 1][y - 1] = "c"
+        color = Fore.YELLOW
+        mapa[x - 1][y - 1] = f"{color}{id_}{Style.RESET_ALL}"
     elif tipo == "destino":
         mapa[x - 1][y - 1] = "D"
+    
+    pintar_mapa()
 
 def leer_base_datos(file_path='bdd.txt'):
     """Lee el archivo de la base de datos y devuelve un diccionario con la información de cada taxi."""
@@ -73,11 +76,13 @@ def leer_base_datos(file_path='bdd.txt'):
         with open(file_path, 'r') as f:
             for line in f:
                 taxi_id, libre, estado, coord_x_destino, coord_y_destino = line.strip().split(',')
+                origen_taxi = config["taxi"]["posicion_inicial"]
                 taxi_id = int(taxi_id)
                 libre = libre.strip().lower() == 'si'
                 taxis[taxi_id] = {
                     "libre": libre,
                     "estado": estado.strip(),
+                    "origen": origen_taxi,
                     "destino": (None if coord_x_destino.strip() == '-' else int(coord_x_destino),
                                 None if coord_y_destino.strip() == '-' else int(coord_y_destino))
                 }
@@ -109,10 +114,8 @@ def manejar_conexion_taxi(connection, taxis_activos):
             connection.send("Autenticación exitosa".encode())
             
             # Obtener posición inicial desde la base de datos o usar una por defecto
-            posicion_inicial = taxis_activos[taxi_id].get("destino", (1, 1))  # Posición por defecto en (1,1)
+            posicion_inicial = taxis_activos[taxi_id].get("origen")  # Posición por defecto en (1,1)
             actualizar_mapa("taxi", taxi_id, posicion_inicial, estado="rojo")  # Actualiza el mapa con el taxi en rojo
-            pintar_mapa()  # Repinta el mapa para reflejar el cambio
-            
             actualizar_base_datos(taxis_activos)  # Actualizar base de datos
         else:
             print(f"Taxi {taxi_id} rechazado. No está activo o no registrado.")
@@ -122,31 +125,22 @@ def manejar_conexion_taxi(connection, taxis_activos):
     finally:
         connection.close()
 
-
+# Seguir aqui
 def escuchar_actualizaciones_taxi(taxis_activos):
     """Escucha actualizaciones de posición de los taxis en Kafka y actualiza el mapa en tiempo real."""
     print("Central escuchando actualizaciones de posición de los taxis en Kafka...")
     
     # Consumidor de Kafka con patrón de tópico
-    consumer_status = KafkaConsumer(
-        bootstrap_servers=BROKER,
-        value_deserializer=lambda v: json.loads(v.decode('utf-8')),
-        group_id="central_group",  # Agrupar las conexiones de la central
-        auto_offset_reset='latest'  # Solo escuchar mensajes nuevos
-    )
-    
-    # Suscribirse a todos los tópicos que coincidan con el patrón de taxis
-    consumer_status.subscribe(pattern=TOPIC_TAXI_STATUS_PATTERN)
+    consumer_status = KafkaConsumer(TOPIC_TAXI_STATUS_PATTERN)
 
     for mensaje in consumer_status:
         data = mensaje.value
         taxi_id = data.get("taxi_id")
-        nueva_pos = data.get("posicion")
-
+        nueva_pos = data.get("pos")
+        print("izan va a perder todas y merecido")
         if taxi_id and nueva_pos:
             estado_taxi = taxis_activos[taxi_id]["estado"]
             actualizar_mapa("taxi", taxi_id, nueva_pos, estado=estado_taxi)  # Actualiza el mapa
-            pintar_mapa()  # Imprime el mapa actualizado
             print(f"Central actualizó posición del Taxi {taxi_id} a {nueva_pos}")
 
 
@@ -181,6 +175,8 @@ def asignar_taxi(solicitud, taxis_activos):
 
             # Actualizar base de datos después de la asignación
             actualizar_base_datos(taxis_activos)
+            
+            #actualizar_mapa("taxi", taxi_id, , estado=estado_taxi)
             return
     
     print("No hay taxis libres disponibles")
@@ -214,6 +210,7 @@ def escuchar_peticiones_cliente(taxis_activos):
     for mensaje in consumer:
         solicitud = mensaje.value
         print(f"Solicitud de cliente recibida: {solicitud}")
+        actualizar_mapa("cliente", config["cliente"]["client_id"], config["cliente"]["ubicacion_inicial"], None)
         asignar_taxi(solicitud, taxis_activos)
 
 def manejar_llegada_destino(mensaje):
@@ -253,7 +250,7 @@ def mostrar_mapa():
         print(" ".join(fila))
     print("\n")
 
-def pintar_mapa():
+def pintar_mapa_inicial():
     """Dibuja el mapa inicial y coloca las ubicaciones predefinidas desde `locations`."""
     print("\n" * 5)
     sys.stdout.write(LINE)
@@ -290,14 +287,42 @@ def pintar_mapa():
     sys.stdout.flush()
 
 
+def pintar_mapa():
+    """Dibuja el mapa inicial y coloca las ubicaciones predefinidas desde `locations`."""
+    print("\n" * 5)
+    sys.stdout.write(LINE)
+    sys.stdout.write(f"{' ':<20} *** EASY CAB Release 1 ***\n")
+    sys.stdout.write(LINE)
+
+    # Encabezado de taxis y clientes
+    sys.stdout.write(f"{' ':<20} {'Taxis':<29} {'|':<20} {'Clientes'}\n")
+    sys.stdout.write(LINE)
+    sys.stdout.write(f"{' ':<8} {'Id.':<10} {'Destino':<15} {'Estado':<14} {'|':<7} {'Id.':<10} {'Destino':<15} {'Estado':<15}\n")
+    sys.stdout.write(LINE)
+
+    sys.stdout.write(LINE + "\n")
+    sys.stdout.write("   " + " ".join([f"{i:2}" for i in range(1, 21)]) + "\n")  # Ajuste de ancho
+    sys.stdout.write(LINE + "\n")
+
+    # Imprimir filas del mapa con ubicaciones
+    for row in range(20):
+        sys.stdout.write(f"{row + 1:<2} ")
+        for col in range(20):
+            sys.stdout.write(f"{mapa[row][col]:<2} ")
+        sys.stdout.write("\n")  # Nueva línea después de cada fila
+
+    sys.stdout.write(LINE + "\n")
+    sys.stdout.flush()
+
 # Modificar la función main para iniciar el escucha de posición en paralelo
 def main():
     taxis_activos = leer_base_datos()
-    pintar_mapa()  # Dibuja el mapa al inicio mostrando ubicaciones
+    pintar_mapa_inicial()  # Dibuja el mapa al inicio mostrando ubicaciones
 
     # Hilos para manejar conexiones de taxis y escuchar posiciones
     threading.Thread(target=iniciar_socket_taxi, args=(taxis_activos,)).start()
     threading.Thread(target=escuchar_peticiones_cliente, args=(taxis_activos,)).start()
+    threading.Thread(target=escuchar_actualizaciones_taxi, args=(taxis_activos,)).start()
 
 if __name__ == '__main__':
     main()

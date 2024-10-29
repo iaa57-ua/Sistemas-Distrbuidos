@@ -22,7 +22,7 @@ SENSORS_PORT = config["taxi"]["sensors_port"]
 CENTRAL_IP = config["central"]["ip"]
 CENTRAL_PORT = config["central"]["port"]
 BROKER = config["taxi"]["broker"]
-TOPIC_TAXI_STATUS = f'taxi_status_{TAXI_ID}'
+TOPIC_TAXI_STATUS = 'taxiStatus'
 TOPIC_TAXI_COMMANDS = f'central_commands_{TAXI_ID}'  # Tópico donde recibe el destino desde la central
 
 producer = KafkaProducer(bootstrap_servers=BROKER)
@@ -66,8 +66,6 @@ def autenticar_con_central():
             respuesta = s.recv(1024).decode()
             if respuesta == "Autenticación exitosa":
                 print(f"Taxi {TAXI_ID} autenticado con éxito en la central.")
-                producer.send(TOPIC_TAXI_STATUS, f"Taxi {TAXI_ID} conectado exitosamente.".encode())
-                producer.flush()
                 return True
             else:
                 print(f"Taxi {TAXI_ID} autenticación fallida: {respuesta}")
@@ -247,6 +245,7 @@ def actualizar_estado_en_central(color):
     mensaje = {
         "taxi_id": TAXI_ID,
         "estado": color,
+        "pos": taxi_pos
     }
     producer.send(TOPIC_TAXI_STATUS, json.dumps(mensaje).encode())
     producer.flush()
