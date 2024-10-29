@@ -52,7 +52,7 @@ def esperar_confirmacion_llegada():
         
         if confirmacion.get("client_id") == CLIENT_ID:
             mensaje = confirmacion.get("mensaje", "")
-            print(f"Cliente {CLIENT_ID} recibió mensaje: {mensaje}")
+            print(f"Cliente '{CLIENT_ID}' recibió mensaje: {mensaje}")
             
             if "ha llegado a su destino" in mensaje:
                 print("Cliente ha llegado a su destino. Solicitará el siguiente en 10 segundos.")

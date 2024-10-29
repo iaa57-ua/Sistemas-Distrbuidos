@@ -7,13 +7,11 @@
         "taxi_id": 1,
         "sensors_port": 12001,
         "broker": "localhost:9092",
-        "topic_taxi_status": "taxi_status_1",
-        "topic_central_commands": "central_commands_1",
         "posicion_inicial": [1, 1]  
     },
     "cliente": {
         "client_id": "a",
-        "ubicacion_inicial": [10,10],
+        "ubicacion_inicial": [3,3],
         "broker": "localhost:9092",
         "topic_request_taxi": "taxi_requests",
         "topic_confirmation": "taxi_confirmation",

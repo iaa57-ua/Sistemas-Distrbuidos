@@ -68,14 +68,16 @@ def actualizar_mapa(tipo, id_, posicion, estado=None):
         for loc_id, (a, b) in locations.items():
             mapa[a - 1][b - 1] = Fore.BLUE + loc_id + Style.RESET_ALL
         
+        #Aquí tenemos que hacer que cuando el taxi lea en la base de datos que haya cliente este lo junte con su id
+        if taxis_activos[id_]["cliente"] != None:
+            #Aquí poner que represente el id del taxi + le cliente que haya en la bdd en el color que corresponda
         # Representa el taxi con el ID en el color correspondiente
-        mapa[x - 1][y - 1] = f"{color}{id_}{Style.RESET_ALL}"  # Actualiza la celda en el mapa
+        else:
+            mapa[x - 1][y - 1] = f"{color}{id_}{Style.RESET_ALL}"  # Actualiza la celda en el mapa
         
     elif tipo == "cliente":
         color = Fore.YELLOW
         mapa[x - 1][y - 1] = f"{color}{id_}{Style.RESET_ALL}"
-    elif tipo == "destino":
-        mapa[x - 1][y - 1] = "D"
     
     pintar_mapa()
 
@@ -85,7 +87,7 @@ def leer_base_datos(file_path='bdd.txt'):
     try:
         with open(file_path, 'r') as f:
             for line in f:
-                taxi_id, libre, estado, coord_x_destino, coord_y_destino = line.strip().split(',')
+                taxi_id, libre, estado, coord_x_destino, coord_y_destino, cliente = line.strip().split(',')
                 origen_taxi = config["taxi"]["posicion_inicial"]
                 taxi_id = int(taxi_id)
                 libre = libre.strip().lower() == 'si'
@@ -94,7 +96,8 @@ def leer_base_datos(file_path='bdd.txt'):
                     "estado": estado.strip(),
                     "origen": origen_taxi,
                     "destino": (None if coord_x_destino.strip() == '-' else int(coord_x_destino),
-                                None if coord_y_destino.strip() == '-' else int(coord_y_destino))
+                                None if coord_y_destino.strip() == '-' else int(coord_y_destino)),
+                    "cliente": None if cliente == '-' else cliente
                 }
     except FileNotFoundError:
         print("El archivo de base de datos no existe.")
@@ -120,6 +123,8 @@ def manejar_conexion_taxi(connection, taxis_activos):
             # Cambiar el estado a disponible y color rojo al autenticarse
             taxis_activos[taxi_id]["libre"] = True
             taxis_activos[taxi_id]["estado"] = "rojo"
+            taxis_activos[taxi_id]["destino"] = (None,None)
+            taxis_activos[taxi_id]["cliente"] = None
             print(f"Taxi {taxi_id} autenticado con éxito y disponible en estado 'rojo'.")
             connection.send("Autenticación exitosa".encode())
             
@@ -144,13 +149,19 @@ def escuchar_actualizaciones_taxi(taxis_activos):
 
     for mensaje in consumer_status:
         data = json.loads(mensaje.value.decode('utf-8'))
+        print(f"Datos recibidos: {data}")
         taxi_id = data["taxi_id"]
         nueva_pos = data["pos"]
         if taxi_id and nueva_pos:
             estado_taxi = taxis_activos[taxi_id]["estado"]
             actualizar_mapa("taxi", taxi_id, nueva_pos, estado=estado_taxi)  # Actualiza el mapa
             print(f"Central actualizó posición del Taxi {taxi_id} a {nueva_pos}")
-
+            #aquí se puede hacer el tema de que el cliente se monte actualizando la base de datos y tal
+            #if pos del taxi es igual a la inicial del cliente se registra el cliente en la base de datos
+            # taxis_activos[taxi_id]["cliente"] = "id_cliente"
+            #if nueva_pos == 
+            if taxis_activos[taxi_id]["destino"] == nueva_pos:
+                manejar_llegada_destino(taxis_activos,taxi_id)
 
 
 def iniciar_socket_taxi(taxis_activos):
@@ -172,9 +183,10 @@ def asignar_taxi(solicitud, taxis_activos):
             taxis_activos[taxi_id]["libre"] = False
             taxis_activos[taxi_id]["estado"] = "verde"
             taxis_activos[taxi_id]["destino"] = solicitud["destino"]
+            taxis_activos[taxi_id]["cliente"] = solicitud["client_id"] #Hacemos que se introduzca en la base de datos cuando ya esté montado
             
             #Confirmar asignación al cliente
-            print(f"Asignando taxi {taxi_id} al cliente {solicitud['client_id']} con estado 'verde'.")
+            print(f"Asignando taxi {taxi_id} al cliente {solicitud['client_id']}.")
             producer.send(TOPIC_CONFIRMATION, {"client_id": solicitud["client_id"], "mensaje": f"Taxi {taxi_id} asignado"})
             producer.flush()
 
@@ -192,7 +204,9 @@ def asignar_taxi(solicitud, taxis_activos):
 def liberar_taxi(taxi_id, taxis_activos):
     """Libera un taxi cuando ha terminado su recorrido."""
     taxis_activos[taxi_id]["libre"] = True
+    taxis_activos[taxi_id]["estado"] = "rojo"
     taxis_activos[taxi_id]["destino"] = (None, None)
+    taxis_activos[taxi_id]["cliente"] = None
     print(f"Taxi {taxi_id} liberado y listo para nuevas asignaciones.")
 
     # Actualizar base de datos después de liberar el taxi
@@ -218,35 +232,29 @@ def escuchar_peticiones_cliente(taxis_activos):
     for mensaje in consumer:
         solicitud = mensaje.value
         print(f"Solicitud de cliente recibida: {solicitud}")
-        actualizar_mapa("cliente", config["cliente"]["client_id"], config["cliente"]["ubicacion_inicial"], None)
+        actualizar_mapa("cliente", solicitud["client_id"], solicitud["ubicacion_actual"], None)
         asignar_taxi(solicitud, taxis_activos)
 
-def manejar_llegada_destino(mensaje):
+def manejar_llegada_destino(taxis_activos,taxi_id):
     """Procesa la llegada de un taxi al destino del cliente."""
-    taxi_id = mensaje["taxi_id"]
-    destino = mensaje["destino"]
+    destino = taxis_activos[taxi_id]["destino"]
 
     # Notificar al cliente que el taxi ha llegado
     mensaje_cliente = {
-        "client_id": taxi_id,  # Este puede ser el ID del taxi para simplificación
+        "client_id": taxis_activos[taxi_id]["cliente"],  
         "mensaje": f"Taxi {taxi_id} ha llegado a su destino {destino}"
     }
     producer.send(TOPIC_CONFIRMATION, value=mensaje_cliente)
     producer.flush()
 
-    # Actualizar estado y disponibilidad del taxi en la base de datos
-    taxis_activos[taxi_id]["libre"] = True
-    taxis_activos[taxi_id]["estado"] = "rojo"
-    taxis_activos[taxi_id]["destino"] = (None, None)
-    actualizar_base_datos(taxis_activos)
-
+    liberar_taxi(taxi_id,taxis_activos)
 
 #Usar en casos que cambiemos el estado de un taxi
 def actualizar_base_datos(taxis_activos, file_path='bdd.txt'):
     with open(file_path, 'w') as f:
         for taxi_id, datos in taxis_activos.items():
             estado = "si" if datos["libre"] else "no"
-            f.write(f"{taxi_id}, {estado}, {datos['estado']}, {datos['destino'][0] or '-'}, {datos['destino'][1] or '-'}\n")
+            f.write(f"{taxi_id}, {estado}, {datos['estado']}, {datos['destino'][0] or '-'}, {datos['destino'][1] or '-'}, {datos['cliente'] or '-'}\n")
     print("Base de datos actualizada.")
 
 EMPTY = "."
@@ -324,7 +332,7 @@ def pintar_mapa():
 
 # Modificar la función main para iniciar el escucha de posición en paralelo
 def main():
-    taxis_activos = leer_base_datos()
+    global taxis_activos = leer_base_datos()
     pintar_mapa_inicial()  # Dibuja el mapa al inicio mostrando ubicaciones
 
     # Hilos para manejar conexiones de taxis y escuchar posiciones
