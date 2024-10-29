@@ -3,6 +3,10 @@ import json
 import threading
 from kafka import KafkaProducer, KafkaConsumer
 import sys
+import colorama
+from colorama import Fore, Style
+
+colorama.init(autoreset=True)
 
 # Función para cargar parámetros
 def cargar_configuracion(file_path):
@@ -21,6 +25,9 @@ config = cargar_configuracion('config.json')
 TOPIC_REQUEST_TAXI = config["cliente"]["topic_request_taxi"]
 TOPIC_CONFIRMATION = config["cliente"]["topic_confirmation"]
 BROKER = config["taxi"]["broker"]
+
+# Definir el tópico de estado de taxis (por ejemplo, usando un patrón para múltiples taxis)
+TOPIC_TAXI_STATUS_PATTERN = '^taxi_status_.*'  # Regex para escuchar todos los tópicos de estado de taxis
 
 # Puerto y dirección del socket para autenticación
 CENTRAL_SOCKET_IP = config["central"]["ip"]
@@ -43,6 +50,7 @@ consumer = KafkaConsumer(
 TAMANO_MAPA = 20
 mapa = [[["."] for _ in range(20)] for _ in range(20)]
 LINE = f"{'-' * 100}\n"
+
 # Cargar configuraciones de ubicaciones y clientes del archivo
 locations = {loc["Id"]: list(map(int, loc["POS"].split(','))) for loc in config["locations"]}
 
@@ -50,11 +58,13 @@ locations = {loc["Id"]: list(map(int, loc["POS"].split(','))) for loc in config[
 def actualizar_mapa(tipo, id_, posicion, estado=None):
     x, y = posicion
     if tipo == "taxi":
-        mapa[x-1][y-1] = f"{id_}" if estado == "verde" else f"{id_}"
+        # Representa el taxi con el ID en el color correspondiente
+        color = Fore.GREEN if estado == "verde" else Fore.RED
+        mapa[x - 1][y - 1] = f"{color}{id_}{Style.RESET_ALL}"  # Actualiza la celda en el mapa
     elif tipo == "cliente":
-        mapa[x-1][y-1] = "c"
+        mapa[x - 1][y - 1] = "c"
     elif tipo == "destino":
-        mapa[x-1][y-1] = "D"
+        mapa[x - 1][y - 1] = "D"
 
 def leer_base_datos(file_path='bdd.txt'):
     """Lee el archivo de la base de datos y devuelve un diccionario con la información de cada taxi."""
@@ -92,12 +102,18 @@ def manejar_conexion_taxi(connection, taxis_activos):
         data = connection.recv(1024).decode().strip()
         taxi_id = int(data)
         if taxi_id in taxis_activos:
-            # Cambia el estado a disponible y el color a rojo al autenticarse
+            # Cambiar el estado a disponible y color rojo al autenticarse
             taxis_activos[taxi_id]["libre"] = True
             taxis_activos[taxi_id]["estado"] = "rojo"
             print(f"Taxi {taxi_id} autenticado con éxito y disponible en estado 'rojo'.")
             connection.send("Autenticación exitosa".encode())
-            actualizar_base_datos(taxis_activos)  # Actualiza la base de datos
+            
+            # Obtener posición inicial desde la base de datos o usar una por defecto
+            posicion_inicial = taxis_activos[taxi_id].get("destino", (1, 1))  # Posición por defecto en (1,1)
+            actualizar_mapa("taxi", taxi_id, posicion_inicial, estado="rojo")  # Actualiza el mapa con el taxi en rojo
+            pintar_mapa()  # Repinta el mapa para reflejar el cambio
+            
+            actualizar_base_datos(taxis_activos)  # Actualizar base de datos
         else:
             print(f"Taxi {taxi_id} rechazado. No está activo o no registrado.")
             connection.send("Autenticación fallida".encode())
@@ -105,6 +121,35 @@ def manejar_conexion_taxi(connection, taxis_activos):
         print(f"Error: Se esperaba un número para el ID del taxi, pero se recibió: {data}")
     finally:
         connection.close()
+
+
+def escuchar_actualizaciones_taxi(taxis_activos):
+    """Escucha actualizaciones de posición de los taxis en Kafka y actualiza el mapa en tiempo real."""
+    print("Central escuchando actualizaciones de posición de los taxis en Kafka...")
+    
+    # Consumidor de Kafka con patrón de tópico
+    consumer_status = KafkaConsumer(
+        bootstrap_servers=BROKER,
+        value_deserializer=lambda v: json.loads(v.decode('utf-8')),
+        group_id="central_group",  # Agrupar las conexiones de la central
+        auto_offset_reset='latest'  # Solo escuchar mensajes nuevos
+    )
+    
+    # Suscribirse a todos los tópicos que coincidan con el patrón de taxis
+    consumer_status.subscribe(pattern=TOPIC_TAXI_STATUS_PATTERN)
+
+    for mensaje in consumer_status:
+        data = mensaje.value
+        taxi_id = data.get("taxi_id")
+        nueva_pos = data.get("posicion")
+
+        if taxi_id and nueva_pos:
+            estado_taxi = taxis_activos[taxi_id]["estado"]
+            actualizar_mapa("taxi", taxi_id, nueva_pos, estado=estado_taxi)  # Actualiza el mapa
+            pintar_mapa()  # Imprime el mapa actualizado
+            print(f"Central actualizó posición del Taxi {taxi_id} a {nueva_pos}")
+
+
 
 def iniciar_socket_taxi(taxis_activos):
     """Inicia el socket para recibir conexiones de taxis y autenticarlos."""
@@ -232,7 +277,7 @@ def pintar_mapa():
 
     # Colocar ubicaciones desde `locations`
     for loc_id, (x, y) in locations.items():
-        mapa[x - 1][y - 1] = loc_id  # Identificación de ubicación por ID
+        mapa[x - 1][y - 1] = Fore.BLUE + loc_id + Style.RESET_ALL # Identificación de ubicación por ID
 
     # Imprimir filas del mapa con ubicaciones
     for row in range(20):
@@ -244,13 +289,15 @@ def pintar_mapa():
     sys.stdout.write(LINE + "\n")
     sys.stdout.flush()
 
-# Llamar a `pintar_mapa` al iniciar
+
+# Modificar la función main para iniciar el escucha de posición en paralelo
 def main():
     taxis_activos = leer_base_datos()
     pintar_mapa()  # Dibuja el mapa al inicio mostrando ubicaciones
+
+    # Hilos para manejar conexiones de taxis y escuchar posiciones
     threading.Thread(target=iniciar_socket_taxi, args=(taxis_activos,)).start()
-    escuchar_peticiones_cliente(taxis_activos)
+    threading.Thread(target=escuchar_peticiones_cliente, args=(taxis_activos,)).start()
 
 if __name__ == '__main__':
     main()
-

@@ -76,6 +76,7 @@ def autenticar_con_central():
         print(f"Error de conexión con la central: {e}")
         return False
 
+# Modificar la función mover_taxi_hacia para enviar posición del taxi
 def mover_taxi_hacia(destino_x, destino_y):
     """Función para mover el taxi hacia la posición de destino en un mapa circular de 20x20."""
     global taxi_pos, taxi_status
@@ -103,7 +104,7 @@ def mover_taxi_hacia(destino_x, destino_y):
             producer.flush()
             actualizar_estado_en_central("rojo")  # Cambiar a "rojo" al llegar al destino
             break
-
+        
         # Calcular delta con movimiento circular en X
         delta_x = (destino_x - taxi_pos[0]) % 20
         if delta_x > 10:
@@ -123,8 +124,17 @@ def mover_taxi_hacia(destino_x, destino_y):
             taxi_pos[1] = (taxi_pos[1] + (1 if delta_y > 0 else -1)) % 20 or 20
 
         print(f'Taxi {TAXI_ID} se mueve a posición {taxi_pos}')
-        producer.send(TOPIC_TAXI_STATUS, f"MOVE {taxi_pos}".encode())
+        
+        # Enviar actualización de posición a la central
+        mensaje_posicion = {
+            "taxi_id": TAXI_ID,
+            "posicion": taxi_pos
+        }
+        producer.send(TOPIC_TAXI_STATUS, json.dumps(mensaje_posicion).encode())  # Notificar posición a Kafka
+        producer.flush()
+        
         time.sleep(2)
+
 
 
 def realizar_recorrido(ubicacion_cliente, destino_final):
@@ -232,15 +242,15 @@ def escuchar_destino():
             print(f"Destino final recibido: {destino_final}")
             mover_taxi_hacia(destino_final[0], destino_final[1])
 
-
 def actualizar_estado_en_central(color):
     """Envía el color actual del taxi (rojo o verde) a la central para actualización en la base de datos."""
     mensaje = {
         "taxi_id": TAXI_ID,
-        "estado": color
+        "estado": color,
     }
     producer.send(TOPIC_TAXI_STATUS, json.dumps(mensaje).encode())
     producer.flush()
+
 
 # Proceso principal
 sensor_conn = conectar_con_sensor()
