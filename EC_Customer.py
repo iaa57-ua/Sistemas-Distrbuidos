@@ -70,7 +70,7 @@ def solicitar_destinos():
             destino = locations[destino_id]
             solicitar_taxi(destino)  # Enviar solicitud al destino actual
             esperar_confirmacion_llegada()  # Espera a que el taxi confirme la llegada
-            time.sleep(10)  # Espera 10 segundos antes de solicitar el siguiente destino
+            time.sleep(5)  # Espera 10 segundos antes de solicitar el siguiente destino
         else:
             print(f"Destino '{destino_id}' no encontrado en las ubicaciones.")
 

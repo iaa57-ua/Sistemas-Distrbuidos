@@ -77,6 +77,12 @@ def actualizar_mapa(tipo, id_, posicion, estado=None):
         # Representa el taxi con el cliente si hay uno en la base de datos
         cliente = taxis_activos[id_].get("cliente")
         if cliente:
+            
+            for fila in range(20):
+                for col in range(20):
+                    if mapa[fila][col] == f"{color}{id_}{cliente}{Style.RESET_ALL}":
+                        mapa[fila][col] = EMPTY
+                        
             mapa[x - 1][y - 1] = f"{color}{id_}{cliente}{Style.RESET_ALL}"
         else:
             mapa[x - 1][y - 1] = f"{color}{id_}{Style.RESET_ALL}"
@@ -170,7 +176,7 @@ def escuchar_actualizaciones_taxi(taxis_activos):
                     taxis_activos[taxi_id]["cliente"] = client_id
                     actualizar_mapa("taxi", taxi_id, nueva_pos, estado=estado_taxi)  # Actualiza el mapa
                     
-                    del solicitudes_pendientes[client_id]
+                    #del solicitudes_pendientes[client_id]
                     print(f"Cliente '{client_id} subió al taxi {taxi_id}")
                     actualizar_base_datos(taxis_activos)
             
