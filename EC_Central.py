@@ -57,6 +57,7 @@ locations = {loc["Id"]: list(map(int, loc["POS"].split(','))) for loc in config[
 
 #Diccionario que nos ayudará a guardar el id del cliente con su ubicación actual
 solicitudes_pendientes = {}
+pos_final = ("-","-")
 
 def actualizar_mapa(tipo, id_, posicion, estado=None):
     x, y = posicion
@@ -155,6 +156,7 @@ def manejar_conexion_taxi(connection, taxis_activos):
         connection.close()
 
 def escuchar_actualizaciones_taxi(taxis_activos):
+    global pos_final
     """Escucha actualizaciones de posición de los taxis en Kafka y actualiza el mapa en tiempo real."""
     print("Central escuchando actualizaciones de posición de los taxis en Kafka...")
     
@@ -184,6 +186,7 @@ def escuchar_actualizaciones_taxi(taxis_activos):
             print(f"Central actualizó posición del Taxi {taxi_id} a {nueva_pos}")
             
             if taxis_activos[taxi_id]["destino"] == nueva_pos:
+                pos_final = nueva_pos
                 manejar_llegada_destino(taxis_activos,taxi_id)
 
 
@@ -265,13 +268,15 @@ def escuchar_peticiones_cliente(taxis_activos):
         asignar_taxi(solicitud, taxis_activos)
 
 def manejar_llegada_destino(taxis_activos,taxi_id):
+    global pos_final
     """Procesa la llegada de un taxi al destino del cliente."""
     destino = taxis_activos[taxi_id]["destino"]
-
+    #RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR
     # Notificar al cliente que el taxi ha llegado
     mensaje_cliente = {
         "client_id": taxis_activos[taxi_id]["cliente"],  
-        "mensaje": f"Taxi {taxi_id} ha llegado a su destino {destino}"
+        "mensaje": f"Taxi {taxi_id} ha llegado a su destino {destino}",
+        "ubicacion": pos_final
     }
     producer.send(TOPIC_CONFIRMATION, value=mensaje_cliente)
     producer.flush()

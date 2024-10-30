@@ -1,13 +1,5 @@
-<<<<<<< HEAD
-1, no, verde, 5, 3, a
-2, no, rojo, -, -,     -
-3, no, rojo, -, -,     -
-4, no, rojo, -, -,     -
-5, no, rojo, -, -,     -
-=======
-1, si, rojo, -, -, -
-2, no, rojo, -, -,         -
-3, no, rojo, -, -,         -
-4, no, rojo, -, -,         -
-5, no, rojo, -, -,         -
->>>>>>> aed9396af1f6edb267455370f2b6aceb97d67740
+3, si, rojo, -, -, -
+1, no, verde, 17, 16,   -
+2, no, verde, 5, 3,   sd mierda
+4, si, rojo, -, -,   -
+5, no, rojo, -, -,                            -

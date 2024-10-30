@@ -1,6 +1,7 @@
 import time
 from kafka import KafkaProducer, KafkaConsumer
 import json
+import threading
 
 # Función para cargar parámetros
 def cargar_configuracion(file_path):
@@ -45,6 +46,7 @@ def solicitar_taxi(destino):
     producer.flush()
 
 def esperar_confirmacion_llegada():
+    global UBICACION
     """Espera la confirmación de que el taxi ha llegado al destino final."""
     print("Esperando confirmación de llegada al destino...")
     for message in consumer:
@@ -55,24 +57,25 @@ def esperar_confirmacion_llegada():
             print(f"Cliente '{CLIENT_ID}' recibió mensaje: {mensaje}")
             
             if "ha llegado a su destino" in mensaje:
-                print("Cliente ha llegado a su destino. Solicitará el siguiente en 10 segundos.")
+                ubicacion = confirmacion.get("ubicacion", "")
+                UBICACION = ubicacion
+                print("Cliente ha llegado a su destino. Solicitará el siguiente en 5 segundos.")
                 break  # Sale del bucle cuando recibe la confirmación de llegada
 
 def solicitar_destinos():
     """Solicita taxis secuencialmente para los destinos en la lista 'Requests'."""
-    requests = config["cliente"]["Requests"]
-    
+    requests = config["cliente"]["Requests"]  
     for request in requests:
         destino_id = request["Id"]
-        
+            
         # Verificar si el destino existe en las ubicaciones definidas
         if destino_id in locations:
             destino = locations[destino_id]
             solicitar_taxi(destino)  # Enviar solicitud al destino actual
             esperar_confirmacion_llegada()  # Espera a que el taxi confirme la llegada
-            time.sleep(5)  # Espera 10 segundos antes de solicitar el siguiente destino
+            time.sleep(5)  # Espera 5 segundos antes de solicitar el siguiente destino
         else:
             print(f"Destino '{destino_id}' no encontrado en las ubicaciones.")
 
 if __name__ == "__main__":
-    solicitar_destinos()
+    threading.Thread(target=solicitar_destinos).start()
