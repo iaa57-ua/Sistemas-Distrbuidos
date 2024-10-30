@@ -11,7 +11,7 @@
     },
     "cliente": {
         "client_id": "a",
-        "ubicacion_inicial": [3,3],
+        "ubicacion_inicial": [10,10],
         "broker": "localhost:9092",
         "topic_request_taxi": "taxi_requests",
         "topic_confirmation": "taxi_confirmation",

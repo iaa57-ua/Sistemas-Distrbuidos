@@ -55,31 +55,39 @@ LINE = f"{'-' * 100}\n"
 # Cargar configuraciones de ubicaciones y clientes del archivo
 locations = {loc["Id"]: list(map(int, loc["POS"].split(','))) for loc in config["locations"]}
 
+#Diccionario que nos ayudará a guardar el id del cliente con su ubicación actual
+solicitudes_pendientes = {}
 
 def actualizar_mapa(tipo, id_, posicion, estado=None):
     x, y = posicion
     if tipo == "taxi":
+        # Determina el color en función del estado
         color = Fore.GREEN if estado == "verde" else Fore.RED
+
+        # Limpia la posición anterior del taxi en el mapa
         for fila in range(20):
-            for col in range(20):                
-                 if mapa[fila][col] == f"{Fore.GREEN}{id_}{Style.RESET_ALL}" or mapa[fila][col] == f"{Fore.RED}{id_}{Style.RESET_ALL}":
+            for col in range(20):
+                if mapa[fila][col] == f"{Fore.GREEN}{id_}{Style.RESET_ALL}" or mapa[fila][col] == f"{Fore.RED}{id_}{Style.RESET_ALL}":
                     mapa[fila][col] = EMPTY
 
+        # Actualiza las ubicaciones en el mapa
         for loc_id, (a, b) in locations.items():
             mapa[a - 1][b - 1] = Fore.BLUE + loc_id + Style.RESET_ALL
         
-        #Aquí tenemos que hacer que cuando el taxi lea en la base de datos que haya cliente este lo junte con su id
-        if taxis_activos[id_]["cliente"] != None:
-            #Aquí poner que represente el id del taxi + le cliente que haya en la bdd en el color que corresponda
-        # Representa el taxi con el ID en el color correspondiente
+        # Representa el taxi con el cliente si hay uno en la base de datos
+        cliente = taxis_activos[id_].get("cliente")
+        if cliente:
+            mapa[x - 1][y - 1] = f"{color}{id_}{cliente}{Style.RESET_ALL}"
         else:
-            mapa[x - 1][y - 1] = f"{color}{id_}{Style.RESET_ALL}"  # Actualiza la celda en el mapa
-        
+            mapa[x - 1][y - 1] = f"{color}{id_}{Style.RESET_ALL}"
+    
     elif tipo == "cliente":
         color = Fore.YELLOW
         mapa[x - 1][y - 1] = f"{color}{id_}{Style.RESET_ALL}"
-    
+
+    # Llama a la función para mostrar el mapa actualizado
     pintar_mapa()
+
 
 def leer_base_datos(file_path='bdd.txt'):
     """Lee el archivo de la base de datos y devuelve un diccionario con la información de cada taxi."""
@@ -107,7 +115,7 @@ def leer_base_datos(file_path='bdd.txt'):
 
 def autenticar_taxi(taxi_id, taxis_activos):
     """Autentica un taxi comparando su ID contra los datos de la base de datos."""
-    if taxi_id in taxis_activos and taxis_activos[taxi_id]["libre"]:
+    if taxi_id in taxis_activos:
         print(f"Taxi {taxi_id} autenticado con éxito.")
         return True
     else:
@@ -119,7 +127,7 @@ def manejar_conexion_taxi(connection, taxis_activos):
     try:
         data = connection.recv(1024).decode().strip()
         taxi_id = int(data)
-        if taxi_id in taxis_activos:
+        if autenticar_taxi(taxi_id, taxis_activos):
             # Cambiar el estado a disponible y color rojo al autenticarse
             taxis_activos[taxi_id]["libre"] = True
             taxis_activos[taxi_id]["estado"] = "rojo"
@@ -152,14 +160,23 @@ def escuchar_actualizaciones_taxi(taxis_activos):
         print(f"Datos recibidos: {data}")
         taxi_id = data["taxi_id"]
         nueva_pos = data["pos"]
+        
         if taxi_id and nueva_pos:
             estado_taxi = taxis_activos[taxi_id]["estado"]
-            actualizar_mapa("taxi", taxi_id, nueva_pos, estado=estado_taxi)  # Actualiza el mapa
+            
+            for client_id, ubicacion_cliente in solicitudes_pendientes.items():
+                if nueva_pos == ubicacion_cliente:
+                    #cliente se monta
+                    taxis_activos[taxi_id]["cliente"] = client_id
+                    actualizar_mapa("taxi", taxi_id, nueva_pos, estado=estado_taxi)  # Actualiza el mapa
+                    
+                    del solicitudes_pendientes[client_id]
+                    print(f"Cliente '{client_id} subió al taxi {taxi_id}")
+                    actualizar_base_datos(taxis_activos)
+            
+            actualizar_mapa("taxi", taxi_id, nueva_pos, estado=estado_taxi)
             print(f"Central actualizó posición del Taxi {taxi_id} a {nueva_pos}")
-            #aquí se puede hacer el tema de que el cliente se monte actualizando la base de datos y tal
-            #if pos del taxi es igual a la inicial del cliente se registra el cliente en la base de datos
-            # taxis_activos[taxi_id]["cliente"] = "id_cliente"
-            #if nueva_pos == 
+            
             if taxis_activos[taxi_id]["destino"] == nueva_pos:
                 manejar_llegada_destino(taxis_activos,taxi_id)
 
@@ -183,7 +200,7 @@ def asignar_taxi(solicitud, taxis_activos):
             taxis_activos[taxi_id]["libre"] = False
             taxis_activos[taxi_id]["estado"] = "verde"
             taxis_activos[taxi_id]["destino"] = solicitud["destino"]
-            taxis_activos[taxi_id]["cliente"] = solicitud["client_id"] #Hacemos que se introduzca en la base de datos cuando ya esté montado
+            #taxis_activos[taxi_id]["cliente"] = solicitud["client_id"] #Hacemos que se introduzca en la base de datos cuando ya esté montado
             
             #Confirmar asignación al cliente
             print(f"Asignando taxi {taxi_id} al cliente {solicitud['client_id']}.")
@@ -231,8 +248,14 @@ def escuchar_peticiones_cliente(taxis_activos):
     print("Central escuchando peticiones de clientes en Kafka...")
     for mensaje in consumer:
         solicitud = mensaje.value
+        client_id = solicitud["client_id"]
+        ubicacion_cliente = solicitud["ubicacion_actual"]
+        
         print(f"Solicitud de cliente recibida: {solicitud}")
         actualizar_mapa("cliente", solicitud["client_id"], solicitud["ubicacion_actual"], None)
+        
+        solicitudes_pendientes[client_id] = ubicacion_cliente
+        
         asignar_taxi(solicitud, taxis_activos)
 
 def manejar_llegada_destino(taxis_activos,taxi_id):
@@ -330,9 +353,10 @@ def pintar_mapa():
     sys.stdout.write(LINE + "\n")
     sys.stdout.flush()
 
+taxis_activos = leer_base_datos() # variable global para leer la base de datos
+
 # Modificar la función main para iniciar el escucha de posición en paralelo
 def main():
-    global taxis_activos = leer_base_datos()
     pintar_mapa_inicial()  # Dibuja el mapa al inicio mostrando ubicaciones
 
     # Hilos para manejar conexiones de taxis y escuchar posiciones
