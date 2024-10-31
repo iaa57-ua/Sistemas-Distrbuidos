@@ -50,6 +50,18 @@ def esperar_confirmacion_llegada():
     global UBICACION
     """Espera la confirmación de que el taxi ha llegado al destino final."""
     print("Esperando confirmación de llegada al destino...")
+    # Asegurarse de que el consumidor esté suscrito y tenga particiones asignadas
+    consumer.subscribe([TOPIC_CONFIRMATION])
+    consumer.poll(0)  # Forzar la suscripción inmediata
+
+    # Espera hasta que se asignen particiones
+    while not consumer.assignment():
+        print("Esperando asignación de particiones...")
+        time.sleep(0.5)
+
+    # Limpia mensajes residuales para evitar movimientos no deseados
+    consumer.seek_to_end()  # Coloca el consumidor al final del tópico
+    
     for message in consumer:
         confirmacion = json.loads(message.value.decode())
         
