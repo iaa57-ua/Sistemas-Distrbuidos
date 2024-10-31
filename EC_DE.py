@@ -84,9 +84,10 @@ def mover_taxi_hacia(destino_x, destino_y):
     print(f"Taxi inicia en posición: {taxi_pos}")
 
     # Cambiar estado a verde al iniciar el movimiento
-    actualizar_estado_en_central("verde")
+#     actualizar_estado_en_central("verde")
     
     while True:
+        actualizar_estado_en_central("verde")
         # Si el taxi está en KO, cambia el estado a "rojo" en la central y espera
         if taxi_status == 'KO':
             actualizar_estado_en_central("rojo")  # Reflejar el estado en la central
@@ -257,6 +258,7 @@ sensor_conn = conectar_con_sensor()
 if sensor_conn:
     if autenticar_con_central():
         threading.Thread(target=escuchar_sensores, args=(sensor_conn,)).start()
-        escuchar_destino()  # Escuchar el destino desde Kafka
+        threading.Thread(escuchar_destino()).start()
+        #escuchar_destino()  # Escuchar el destino desde Kafka
 else:
     print(f"Taxi {TAXI_ID}: No se pudo conectar al sensor, terminando proceso.")

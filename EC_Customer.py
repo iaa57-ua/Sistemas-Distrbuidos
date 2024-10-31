@@ -34,6 +34,7 @@ consumer = KafkaConsumer(
 # Diccionario de ubicaciones (destinos) desde la configuración
 locations = {loc["Id"]: list(map(int, loc["POS"].split(','))) for loc in config["locations"]}
 
+
 def solicitar_taxi(destino):
     """Envía una solicitud de taxi con la ubicación actual y el destino especificado."""
     solicitud = {

@@ -10,8 +10,8 @@
         "posicion_inicial": [1, 1]  
     },
     "cliente": {
-        "client_id": "x",
-        "ubicacion_inicial": [2,2],
+        "client_id": "d",
+        "ubicacion_inicial": [11,10],
         "broker": "localhost:9092",
         "topic_request_taxi": "taxi_requests",
         "topic_confirmation": "taxi_confirmation",

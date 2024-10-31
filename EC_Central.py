@@ -5,6 +5,7 @@ from kafka import KafkaProducer, KafkaConsumer
 import sys
 import colorama
 from colorama import Fore, Style
+import time
 
 
 colorama.init(autoreset=True)
@@ -94,6 +95,7 @@ def actualizar_mapa(tipo, id_, posicion, estado=None):
 
     # Llama a la función para mostrar el mapa actualizado
     pintar_mapa()
+    
 
 
 def leer_base_datos(file_path='bdd.txt'):
@@ -288,17 +290,13 @@ def actualizar_base_datos(taxis_activos, file_path='bdd.txt'):
     with open(file_path, 'w') as f:
         for taxi_id, datos in taxis_activos.items():
             estado = "si" if datos["libre"] else "no"
-            f.write(f"{taxi_id}, {estado}, {datos['estado']}, {datos['destino'][0] or '-'}, {datos['destino'][1] or '-'}, {datos['cliente'] or '-'}\n")
+            destino_x = datos["destino"][0] if datos["destino"][0] is not None else '-'
+            destino_y = datos["destino"][1] if datos["destino"][1] is not None else '-'
+            cliente = datos["cliente"].strip() if datos["cliente"] else '-'  # Usamos strip() para limpiar espacios extra
+            f.write(f"{taxi_id}, {estado}, {datos['estado']}, {destino_x}, {destino_y}, {cliente}\n")
     print("Base de datos actualizada.")
 
 EMPTY = "."
-
-def mostrar_mapa():
-    """Imprime el mapa actual, incluyendo taxis, clientes y destinos predefinidos."""
-    print("Mapa de la ciudad:")
-    for fila in mapa:
-        print(" ".join(fila))
-    print("\n")
 
 def pintar_mapa_inicial():
     """Dibuja el mapa inicial y coloca las ubicaciones predefinidas desde `locations`."""
