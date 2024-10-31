@@ -4,14 +4,14 @@
         "port": 8000
     },
     "taxi": {
-        "taxi_id": 3,
-        "sensors_port": 12003,
+        "taxi_id": 4,
+        "sensors_port": 12004,
         "broker": "localhost:9092",
         "posicion_inicial": [1, 1]  
     },
     "cliente": {
-        "client_id": "d",
-        "ubicacion_inicial": [11,10],
+        "client_id": "C",
+        "ubicacion_inicial": [3,7],
         "broker": "localhost:9092",
         "topic_request_taxi": "taxi_requests",
         "topic_confirmation": "taxi_confirmation",
@@ -20,16 +20,7 @@
                 "Id":"A"
             },
             {
-                "Id":"C"
-            },
-            {
                 "Id":"F"
-            },
-            {
-                "Id":"D"
-            },
-            {
-                "Id":"E"
             }
         ]  
     },
