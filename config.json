@@ -1,21 +1,21 @@
 {
     "central": {
-        "ip": "localhost",
-        "kafka_port": "9092",
+        "ip": "192.168.1.61",
+        "kafka_port": 9092,
         "port": 6060
     },
     "taxi": {
         "taxi_id": 4,
         "sensors_port": 12004,
-        "taxi_ip": "localhost",
-        "conexion_central": "localhost:6060",
-        "broker": "localhost:9092",
+        "taxi_ip": "192.168.1.61",
+        "conexion_central": "192.168.1.61:6060",
+        "broker": "192.168.1.61:9092",
         "posicion_inicial": [1, 1]  
     },
     "cliente": {
         "client_id": "C",
         "ubicacion_inicial": [3,7],
-        "broker": "localhost:9092",
+        "broker": "192.168.1.61:9092",
         "topic_request_taxi": "taxi_requests",
         "topic_confirmation": "taxi_confirmation",
         "Requests":[

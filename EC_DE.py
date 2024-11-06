@@ -62,6 +62,7 @@ def autenticar_con_central():
     """Autentica el taxi con la central después de conectar con el sensor."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(5)
             s.connect((CENTRAL_IP, CENTRAL_PORT))
             s.sendall(f"{TAXI_ID}".encode())
             respuesta = s.recv(1024).decode()
@@ -71,9 +72,11 @@ def autenticar_con_central():
             else:
                 print(f"Taxi {TAXI_ID} autenticación fallida: {respuesta}")
                 return False
+    except socket.timeout:
+        print("Error de conexión: El tiempo de espera de conexión ha expirado.")
     except Exception as e:
         print(f"Error de conexión con la central: {e}")
-        return False
+    return False
 
 # Modificar la función mover_taxi_hacia para enviar posición del taxi
 def mover_taxi_hacia(destino_x, destino_y):
