@@ -15,7 +15,7 @@ def cargar_configuracion(file_path):
 
 config = cargar_configuracion('config.json')
 
-CENTRAL_IP = config["central"]["ip"]
+TAXI_IP = config["taxi"]["taxi_ip"]
 SENSOR_PORT = config["taxi"]["sensors_port"]
 TAXI_ID = config["taxi"]["taxi_id"]
 MENSAJE = "OK"
@@ -25,7 +25,7 @@ def conectar_con_taxi():
     while True:
         try:
             taxi_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            taxi_socket.connect((CENTRAL_IP, SENSOR_PORT))
+            taxi_socket.connect((TAXI_IP, SENSOR_PORT))
             taxi_socket.send(str(TAXI_ID).encode())
             print(f"Sensor del taxi {TAXI_ID} conectado.")
             return taxi_socket  # Retorna el socket si la conexión es exitosa

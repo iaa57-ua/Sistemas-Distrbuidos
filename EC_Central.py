@@ -26,7 +26,8 @@ config = cargar_configuracion('config.json')
 # Parámetros de configuración de Kafka
 TOPIC_REQUEST_TAXI = config["cliente"]["topic_request_taxi"]
 TOPIC_CONFIRMATION = config["cliente"]["topic_confirmation"]
-BROKER = config["taxi"]["broker"]
+BROKER = config["taxi"]["broker"] #ip y puerto kafka
+PUERTO_ESCUCHA = config["central"]["port"]
 
 # Definir el tópico de estado de taxis (por ejemplo, usando un patrón para múltiples taxis)
 TOPIC_TAXI_STATUS_PATTERN = 'taxiEstado'  # Regex para escuchar todos los tópicos de estado de taxis

@@ -1,11 +1,14 @@
 {
     "central": {
-        "ip": "127.0.0.1",
-        "port": 8000
+        "ip": "localhost",
+        "kafka_port": "9092",
+        "port": 6060
     },
     "taxi": {
         "taxi_id": 4,
         "sensors_port": 12004,
+        "taxi_ip": "localhost",
+        "conexion_central": "localhost:6060",
         "broker": "localhost:9092",
         "posicion_inicial": [1, 1]  
     },
